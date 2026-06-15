@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 对焦</title>
+<style>
+  .big{font-size:46px;line-height:1.1;color:var(--gold);font-variant-numeric:tabular-nums;}
+  .big .unit{font-size:16px;color:var(--ink-dim);margin-left:8px;}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0;}
+  .row input.fld{width:130px;text-align:right;}
+  #vcurve{width:100%;height:300px;display:block;background:var(--sky-2);border:1px solid var(--hair);}
+  .legend{display:flex;gap:18px;font-size:12px;color:var(--ink-dim);margin-top:8px;}
+  .legend i{display:inline-block;width:18px;height:0;border-top:2px solid var(--gold);vertical-align:middle;margin-right:5px;}
+  .legend i.pt{border:none;width:8px;height:8px;border-radius:999px;background:var(--celestial);}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>调焦座</h2>
+        <span class="en">Focuser</span><span id="f-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="main"></div>
+
+      <div id="ctl" style="display:none">
+        <div class="sec-h"><span class="rn">Ⅱ</span><h2>移动</h2><span class="en">Move</span></div>
+        <div class="row">
+          <span class="muted">绝对 <em class="em">abs</em></span>
+          <input class="fld" id="abs" type="number" placeholder="目标位置">
+          <button class="cap solid" id="btn-abs">移动</button>
+          <button class="cap danger" id="btn-halt">停止</button>
+        </div>
+        <div class="row">
+          <span class="muted">相对 <em class="em">rel</em></span>
+          <button class="cap" data-step="-500">−500</button>
+          <button class="cap" data-step="-100">−100</button>
+          <button class="cap" data-step="100">＋100</button>
+          <button class="cap" data-step="500">＋500</button>
+        </div>
+
+        <div class="sec-h"><span class="rn">Ⅲ</span><h2>自动对焦</h2><span class="en">Auto Focus</span>
+          <span id="af-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+        <div class="row">
+          <button class="cap solid" id="btn-af">运行自动对焦</button>
+          <button class="cap danger" id="btn-af-cancel">取消</button>
+        </div>
+        <canvas id="vcurve" width="760" height="300"></canvas>
+        <div class="legend"><span><i class="pt"></i>采样点 <em class="em">HFR</em></span><span><i></i>拟合抛物线 <em class="em">fit</em></span></div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">温度补偿</h2></div>
+      <div id="tempcomp"></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">对焦结果</h2></div>
+      <div id="af-result"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const C_GOLD = "#c9a227", C_CEL = "#9db4d0", C_HAIR = "rgba(139,145,165,.28)", C_DIM = "#8b91a5";
+let lastAF = null;
+
+async function refresh(){
+  const f = await Ops.get("/api/focuser");
+  document.getElementById("f-state").textContent = !f.connected ? "未连接"
+    : f.is_moving ? "移动中" : f.af_running ? "对焦中" : "就绪";
+  document.getElementById("ctl").style.display = f.connected ? "" : "none";
+
+  document.getElementById("main").innerHTML = f.connected ?
+     `<div class="kv"><span class="k">当前位置 <em>position</em></span></div>`
+    +`<div class="big">${f.position}<span class="unit">步 / ${f.max_step}</span></div>`
+    +`<div class="kv" style="margin-top:14px"><span class="k">温度 <em>temp</em></span><span class="v gold">${f.temperature.toFixed(1)}°C</span></div>`
+    +`<div class="kv"><span class="k">步长 <em>step</em></span><span class="v">${f.step_size_um} µm</span></div>`
+    +`<div class="kv"><span class="k">运动 <em>moving</em></span><span class="v">${f.is_moving?'是':'否'}</span></div>`
+    +`<div class="kv"><span class="k">设备 <em>name</em></span><span class="v">${f.name||'—'}</span></div>`
+    : `<div class="muted em">「调焦座」未连接 —— 请到「设备」页连接</div>`;
+
+  document.getElementById("tempcomp").innerHTML = f.connected ? (f.temp_comp_available ?
+     `<div class="kv"><span class="k">补偿 <em>temp comp</em></span><span class="v ${f.temp_comp?'gold':''}">${f.temp_comp?'开':'关'}</span></div>`
+    +`<div class="row"><button class="cap ${f.temp_comp?'solid':''}" id="btn-tc">${f.temp_comp?'关闭温度补偿':'开启温度补偿'}</button></div>`
+    : `<div class="muted em">该调焦座无温度补偿</div>`) : "";
+  const tc = document.getElementById("btn-tc");
+  if(tc) tc.onclick = async ()=>{
+    if(!Ops.requireControl()) return;
+    const d = await Ops.action("focuser","set_tempcomp",{on:!f.temp_comp});
+    if(d.ok){ Ops.status("ok", f.temp_comp?"已关闭温度补偿":"已开启温度补偿"); refresh(); }
+  };
+
+  document.getElementById("af-state").textContent = f.af_running ? "运行中" : "";
+}
+
+async function refreshAF(){
+  const af = await Ops.get("/api/focuser/autofocus");
+  lastAF = af;
+  drawCurve(af);
+  const fin = af.finished_at ? af.finished_at.replace("T"," ").slice(0,19) : "—";
+  document.getElementById("af-result").innerHTML =
+     `<div class="kv"><span class="k">最佳位置 <em>best pos</em></span><span class="v gold">${af.best_position!=null?af.best_position:'—'}</span></div>`
+    +`<div class="kv"><span class="k">最佳 HFR <em>best hfr</em></span><span class="v gold">${af.best_hfr!=null?af.best_hfr.toFixed(2):'—'}</span></div>`
+    +`<div class="kv"><span class="k">拟合优度 <em>R²</em></span><span class="v">${af.r_squared!=null?af.r_squared.toFixed(3):'—'}</span></div>`
+    +`<div class="kv"><span class="k">采样点 <em>points</em></span><span class="v">${(af.points||[]).length}</span></div>`
+    +`<div class="kv"><span class="k">完成于 <em>finished</em></span><span class="v">${fin}</span></div>`
+    +(af.error?`<div class="muted em" style="margin-top:8px">${af.error}</div>`:"");
+}
+
+function drawCurve(af){
+  const cv = document.getElementById("vcurve"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, padL = 46, padR = 16, padT = 16, padB = 30;
+  ctx.clearRect(0,0,W,H);
+  const pts = af.points || [];
+  if(!pts.length && !(af.fitting && af.fitting.length===3)){
+    ctx.fillStyle = C_DIM; ctx.font = "14px Georgia,serif"; ctx.textAlign = "center";
+    ctx.fillText("尚无采样 —— 运行自动对焦后绘制 V 曲线", W/2, H/2);
+    return;
+  }
+  // 取值域
+  let xs = pts.map(p=>p.position), ys = pts.map(p=>p.hfr);
+  if(af.best_position!=null) xs.push(af.best_position);
+  let xmin = Math.min(...xs), xmax = Math.max(...xs);
+  if(xmin===xmax){ xmin-=100; xmax+=100; }
+  const padX = (xmax-xmin)*0.08; xmin-=padX; xmax+=padX;
+  let ymin = 0, ymax = ys.length ? Math.max(...ys)*1.15 : 5;
+  if(af.fitting && af.fitting.length===3){
+    const [a,b,c]=af.fitting;
+    for(let i=0;i<=40;i++){ const x=xmin+(xmax-xmin)*i/40, y=a*x*x+b*x+c; if(y>ymax)ymax=y; }
+  }
+  if(ymax<=ymin) ymax = ymin+1;
+  const sx = x => padL + (x-xmin)/(xmax-xmin)*(W-padL-padR);
+  const sy = y => H-padB - (y-ymin)/(ymax-ymin)*(H-padT-padB);
+
+  // 轴与刻度线
+  ctx.strokeStyle = C_HAIR; ctx.lineWidth = 1; ctx.fillStyle = C_DIM;
+  ctx.font = "11px Georgia,serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for(let i=0;i<=4;i++){ const y = ymin+(ymax-ymin)*i/4, py = sy(y);
+    ctx.beginPath(); ctx.moveTo(padL,py); ctx.lineTo(W-padR,py); ctx.stroke();
+    ctx.fillText(y.toFixed(1), padL-6, py); }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for(let i=0;i<=4;i++){ const x = xmin+(xmax-xmin)*i/4;
+    ctx.fillText(Math.round(x), sx(x), H-padB+6); }
+  ctx.textAlign = "left"; ctx.fillText("位置 / position", padL, padT-2);
+  ctx.save(); ctx.translate(12,padT+6); ctx.rotate(-Math.PI/2); ctx.textAlign="right"; ctx.fillText("HFR",0,0); ctx.restore();
+
+  // 拟合抛物线(金色)
+  if(af.fitting && af.fitting.length===3){
+    const [a,b,c]=af.fitting;
+    ctx.strokeStyle = C_GOLD; ctx.lineWidth = 1.6; ctx.beginPath();
+    for(let i=0;i<=120;i++){ const x=xmin+(xmax-xmin)*i/120, y=a*x*x+b*x+c;
+      const px=sx(x), py=sy(y); i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+    ctx.stroke();
+  }
+  // best_position 竖线
+  if(af.best_position!=null){
+    const px = sx(af.best_position);
+    ctx.strokeStyle = C_GOLD; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(px,padT); ctx.lineTo(px,H-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = C_GOLD; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("最佳 "+af.best_position, px, padT+12);
+  }
+  // 散点(冷蓝)
+  ctx.fillStyle = C_CEL;
+  pts.forEach(p=>{ ctx.beginPath(); ctx.arc(sx(p.position), sy(p.hfr), 3.2, 0, Math.PI*2); ctx.fill(); });
+}
+
+document.getElementById("btn-abs").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const v = +document.getElementById("abs").value;
+  if(isNaN(v)){ Ops.status("err","请先填写目标位置"); return; }
+  const d = await Ops.action("focuser","move_abs",{position:v});
+  if(d.ok) Ops.status("ok","移动至 "+v);
+};
+document.getElementById("btn-halt").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("focuser","halt",{}); if(d.ok) Ops.status("warn","已停止调焦");
+};
+document.querySelectorAll("[data-step]").forEach(b=>b.onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const s = +b.dataset.step;
+  const d = await Ops.action("focuser","move_rel",{steps:s});
+  if(d.ok) Ops.status("ok","相对移动 "+(s>0?"+":"")+s);
+});
+document.getElementById("btn-af").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("focuser","autofocus_start",{});
+  if(d.ok) Ops.status("ok","自动对焦已开始");
+};
+document.getElementById("btn-af-cancel").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("focuser","autofocus_cancel",{});
+  if(d.ok) Ops.status("warn","已取消自动对焦");
+};
+
+document.addEventListener("ops:ready", ()=>{ refresh(); refreshAF(); });
+Ops.onEvent((e)=>{
+  if(e.domain==="focuser") refresh();
+  if(["AUTOFOCUS-STARTING","AUTOFOCUS-POINT-ADDED","AUTOFOCUS-FINISHED"].includes(e.event)){ refresh(); refreshAF(); }
+});
+setInterval(()=>{ if(!document.hidden){ refresh(); refreshAF(); } }, 1500);
+</script>
+</body>
+</html>

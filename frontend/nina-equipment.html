@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 设备</title>
+<style>
+  .eq{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--hair-soft);}
+  .eq .name{width:130px;}
+  .eq .name b{font-weight:400;} .eq .name em{font-style:italic;color:var(--ink-dim);font-size:11px;display:block;}
+  .eq select{flex:1;min-width:120px;max-width:320px;}
+  .eq .info{flex:1;color:var(--ink-dim);font-size:13px;}
+  .eq .act{display:flex;gap:8px;}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>设备连接</h2>
+    <span class="en">Equipment Connection</span>
+    <span style="margin-left:auto"><button class="cap" id="btn-all-on">一键连接全部</button></span></div>
+  <div id="eq-list"></div>
+  <p class="muted em" style="margin-top:24px;font-size:13px">
+    模拟模式下所有设备均有内置「模拟驱动」,连接后即可在各页操作;
+    切到真机(provider=live)后,此处列出 NINA 提供的 ASCOM/Alpaca/原生驱动。</p>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const DEVS = [
+  ["camera","相机","Camera"],["mount","赤道仪","Mount"],["focuser","对焦","Focuser"],
+  ["filterwheel","滤镜轮","FilterWheel"],["guider","导星","Guider"],["rotator","旋转器","Rotator"],
+  ["dome","圆顶","Dome"],["flatdevice","平场","Flat"],["switch","开关","Switch"],
+  ["weather","气象","Weather"],["safetymonitor","安全","Safety"],
+];
+
+function row(type,zh,en){
+  return `<div class="eq" data-type="${type}">
+    <div class="name"><b>${zh}</b><em>${en}</em></div>
+    <select class="fld driver"></select>
+    <div class="info">—</div>
+    <div class="act">
+      <button class="cap btn-conn">连接</button>
+      <button class="cap btn-disc" disabled>断开</button>
+    </div></div>`;
+}
+
+async function loadDrivers(type, sel){
+  const d = await Ops.get(`/api/equipment/${type}/list`);
+  sel.innerHTML = (d.drivers||[]).map(dr=>`<option value="${dr.id}">${dr.name} · ${dr.category}</option>`).join("")
+    || `<option value="">无可用驱动</option>`;
+}
+
+async function refresh(){
+  const d = await Ops.get("/api/devices");
+  const byType = Object.fromEntries((d.devices||[]).map(x=>[x.type,x]));
+  document.querySelectorAll(".eq").forEach(el=>{
+    const t = el.dataset.type, st = byType[t]||{};
+    el.querySelector(".info").innerHTML = st.connected
+      ? `<span class="dot on"></span> <span style="color:var(--gold)">${st.name}</span>`
+        + (st.detail?` · ${st.detail}`:"")
+      : `<span class="dot"></span> 未连接`;
+    el.querySelector(".btn-conn").disabled = st.connected;
+    el.querySelector(".btn-disc").disabled = !st.connected;
+    el.querySelector(".driver").disabled = st.connected;
+  });
+}
+
+document.addEventListener("ops:ready", async ()=>{
+  const host = document.getElementById("eq-list");
+  host.innerHTML = DEVS.map(([t,zh,en])=>row(t,zh,en)).join("");
+  for(const el of document.querySelectorAll(".eq")){
+    const t = el.dataset.type;
+    await loadDrivers(t, el.querySelector(".driver"));
+    el.querySelector(".btn-conn").onclick = async ()=>{
+      if(!Ops.requireControl()) return;
+      const drv = el.querySelector(".driver").value;
+      const d = await Ops.post(`/api/equipment/${t}/connect`, {driver_id:drv});
+      if(d.ok){ Ops.status("ok",`已连接 ${d.name||t}`); refresh(); }
+      else if(!d.locked) Ops.status("err",d.error||"连接失败");
+    };
+    el.querySelector(".btn-disc").onclick = async ()=>{
+      if(!Ops.requireControl()) return;
+      const d = await Ops.post(`/api/equipment/${t}/disconnect`, {});
+      if(d.ok){ Ops.status("warn",`已断开 ${t}`); refresh(); }
+    };
+  }
+  refresh();
+});
+
+document.getElementById("btn-all-on").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  for(const [t] of DEVS){ await Ops.post(`/api/equipment/${t}/connect`, {}); }
+  Ops.status("ok","已尝试连接全部设备"); refresh();
+};
+
+Ops.onEvent((e)=>{ if(e.event.endsWith("-CONNECTED")||e.event.endsWith("-DISCONNECTED")) refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, 4000);
+</script>
+</body>
+</html>

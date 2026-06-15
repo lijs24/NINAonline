@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 导星</title>
+<style>
+  #graph{width:100%;height:340px;display:block;border:1px solid var(--hair);background:var(--sky-2);}
+  .ctls{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .legend{display:flex;gap:18px;align-items:center;margin-top:12px;font-size:13px;color:var(--ink-dim);}
+  .legend i{display:inline-block;width:18px;height:2px;vertical-align:middle;margin-right:6px;}
+  .legend i.ra{background:var(--gold);} .legend i.dec{background:var(--celestial);}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>导星曲线</h2>
+        <span class="en">Guide Graph</span><span id="g-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="main">
+        <canvas id="graph" width="900" height="340"></canvas>
+        <div class="legend">
+          <span><i class="ra"></i>赤经 <em class="em">RA</em></span>
+          <span><i class="dec"></i>赤纬 <em class="em">Dec</em></span>
+          <span class="muted">纵轴 ±<span id="g-span">4</span>″ · 发丝线为 ±RMS</span>
+        </div>
+
+        <div class="sec-h"><span class="rn">Ⅱ</span><h2>控制</h2><span class="en">Control</span></div>
+        <div class="ctls">
+          <button class="cap" id="btn-start">开始导星</button>
+          <button class="cap danger" id="btn-stop">停止</button>
+          <button class="cap" id="btn-dither">抖动</button>
+          <button class="cap" id="btn-autosel">自动选星</button>
+          <button class="cap" id="btn-clearcal">清除校准</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">状态</h2></div>
+      <div id="info"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const STATE_CN = {idle:"空闲",calibrating:"校准中",guiding:"导星中",dithering:"抖动中",lost:"丢星"};
+let lastState = null, lastSteps = [], lastRms = {ra:0,dec:0,total:0};
+const SPAN = 4;   // 纵轴角秒 ±剧情范围
+
+document.getElementById("g-span").textContent = SPAN;
+
+async function refresh(){
+  const g = await Ops.get("/api/guider");
+  lastState = g.state;
+  lastRms = {ra:g.rms_ra||0, dec:g.rms_dec||0, total:g.rms_total||0};
+
+  document.getElementById("g-state").textContent = !g.connected ? "未连接"
+    : (STATE_CN[g.state]||g.state) + (g.settling ? " · 稳定中" : "");
+
+  const main = document.getElementById("main");
+  main.style.display = g.connected ? "" : "none";
+
+  if(!g.connected){
+    if(!document.getElementById("g-nc")){
+      const d = document.createElement("div");
+      d.id = "g-nc"; d.className = "muted em";
+      d.textContent = "「导星相机」未连接 —— 请到「设备」页连接";
+      main.parentNode.insertBefore(d, main.nextSibling);
+    }
+    document.getElementById("info").innerHTML =
+      `<div class="muted em">导星未连接</div>`;
+    return;
+  }
+  const nc = document.getElementById("g-nc"); if(nc) nc.remove();
+
+  document.getElementById("info").innerHTML =
+     `<div class="kv"><span class="k">状态 <em>state</em></span><span class="v gold">${STATE_CN[g.state]||g.state}</span></div>`
+    +`<div class="kv"><span class="k">稳定中 <em>settling</em></span><span class="v">${g.settling?"是":"否"}</span></div>`
+    +`<div class="kv"><span class="k">RMS 赤经 <em>RA ″</em></span><span class="v">${g.rms_ra.toFixed(2)}</span></div>`
+    +`<div class="kv"><span class="k">RMS 赤纬 <em>Dec ″</em></span><span class="v">${g.rms_dec.toFixed(2)}</span></div>`
+    +`<div class="kv"><span class="k">RMS 合计 <em>total ″</em></span><span class="v gold">${g.rms_total.toFixed(2)}</span></div>`
+    +`<div class="kv"><span class="k">像元比例 <em>″/px</em></span><span class="v">${g.pixel_scale.toFixed(2)}</span></div>`
+    +`<div class="kv"><span class="k">导星器 <em>name</em></span><span class="v">${g.name||"—"}</span></div>`;
+
+  syncButtons(g);
+}
+
+function syncButtons(g){
+  const guiding = g.state === "guiding" || g.state === "dithering";
+  const btn = (id)=>document.getElementById(id);
+  btn("btn-start").classList.toggle("solid", guiding);
+  btn("btn-start").disabled = guiding || g.state === "calibrating";
+  btn("btn-stop").disabled  = g.state === "idle";
+  btn("btn-dither").disabled = !guiding || g.settling || !g.can_dither;
+  btn("btn-autosel").disabled = guiding || g.state === "calibrating";
+  btn("btn-clearcal").disabled = guiding || g.state === "calibrating";
+}
+
+async function refreshGraph(){
+  if(lastState === null) return;
+  const r = await Ops.get("/api/guider/graph");
+  lastSteps = (r && r.steps) ? r.steps : [];
+  draw();
+}
+
+function draw(){
+  const cv = document.getElementById("graph"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, mid = H/2;
+  ctx.clearRect(0,0,W,H);
+
+  // 0 线
+  ctx.strokeStyle = getCss("--hair"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(W,mid); ctx.stroke();
+
+  // 刻度发丝线 ±SPAN/2
+  ctx.strokeStyle = getCss("--hair-soft");
+  [SPAN/2, -SPAN/2].forEach(v=>{
+    const y = mid - (v/SPAN)*mid;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  });
+
+  // ±RMS 参考发丝线(total)
+  if(lastRms.total > 0){
+    ctx.save(); ctx.setLineDash([3,4]); ctx.strokeStyle = getCss("--hair");
+    [lastRms.total, -lastRms.total].forEach(v=>{
+      const y = mid - (clamp(v)/SPAN)*mid;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // 纵轴刻度文字
+  ctx.fillStyle = getCss("--ink-dim"); ctx.font = "11px Georgia,serif";
+  ctx.fillText(`+${(SPAN/2).toFixed(0)}″`, 4, 13);
+  ctx.fillText("0″", 4, mid - 4);
+  ctx.fillText(`−${(SPAN/2).toFixed(0)}″`, 4, H - 5);
+
+  const n = lastSteps.length;
+  if(n < 2) return;
+  const dx = W / (n - 1);
+  const plot = (key, color)=>{
+    ctx.strokeStyle = color; ctx.lineWidth = 1.4; ctx.beginPath();
+    lastSteps.forEach((s,i)=>{
+      const v = clamp(+s[key] || 0);
+      const x = i*dx, y = mid - (v/SPAN)*mid;
+      i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+    });
+    ctx.stroke();
+  };
+  plot("dec_dist", getCss("--celestial"));   // 冷蓝在下层
+  plot("ra_dist", getCss("--gold"));          // 金色在上层
+}
+
+function clamp(v){ return Math.max(-SPAN, Math.min(SPAN, v)); }
+function getCss(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+// -- 控制 -------------------------------------------------------------- //
+document.getElementById("btn-start").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("guider","start",{}); if(d.ok) Ops.status("ok","开始导星");
+};
+document.getElementById("btn-stop").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("guider","stop",{}); if(d.ok) Ops.status("warn","已停止导星");
+};
+document.getElementById("btn-dither").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("guider","dither",{}); if(d.ok) Ops.status("ok","开始抖动 · 稳定中");
+};
+document.getElementById("btn-autosel").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("guider","auto_select",{}); if(d.ok) Ops.status("ok","已自动选星");
+};
+document.getElementById("btn-clearcal").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("guider","clear_calibration",{}); if(d.ok) Ops.status("warn","已清除校准 · 下次导星将重新校准");
+};
+
+document.addEventListener("ops:ready", ()=>{ refresh().then(refreshGraph); });
+Ops.onEvent((e)=>{
+  if(e.event==="GUIDER-START"||e.event==="GUIDER-STOP"||e.event==="GUIDER-DITHER"||e.domain==="guider")
+    refresh().then(refreshGraph);
+});
+setInterval(()=>{ if(!document.hidden){ refresh(); refreshGraph(); } }, 1000);
+</script>
+</body>
+</html>

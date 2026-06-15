@@ -1,0 +1,55 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Editor / IDE ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- OS cruft ----
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Project runtime state ----
+# state/ is auto-created at startup (backend/config.py); keep the dir,
+# ignore the runtime logs and any local databases written into it.
+state/*.log
+state/*.db
+state/*.sqlite
+state/*.sqlite3
+!state/.gitkeep

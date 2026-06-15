@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 构图</title>
+<style>
+  .res{padding:6px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
+    gap:12px;cursor:pointer;}
+  .res:hover{color:var(--gold);}
+  #frame{width:100%;border:1px solid var(--hair);background:var(--sky-2);display:block;
+    aspect-ratio:4/3;}
+  .rot{display:flex;align-items:center;gap:12px;margin-top:14px;}
+  .rot input[type=range]{flex:1;accent-color:var(--gold);background:transparent;}
+  .rot .deg{font-variant-numeric:tabular-nums;color:var(--gold);min-width:62px;text-align:right;}
+  @media(max-width:880px){.col-rail{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>目标检索</h2>
+        <span class="en">Search</span><span id="f-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div style="display:flex;gap:10px;margin-bottom:8px">
+        <input class="fld" id="q" placeholder="检索 M / NGC / IC / 名称…" style="flex:1">
+        <button class="cap" id="btn-search">检索</button>
+      </div>
+      <div id="results"></div>
+
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>视场预览</h2><span class="en">Field of View</span></div>
+      <div id="frame-host">
+        <canvas id="frame" width="640" height="480"></canvas>
+        <div class="rot">
+          <span class="k muted">旋转角 <em class="em">rotation</em></span>
+          <input type="range" id="rot-slider" min="0" max="360" step="1" value="0">
+          <input class="fld" id="rot-num" type="number" min="0" max="360" step="1" value="0" style="width:78px;text-align:right">
+          <span class="deg" id="rot-deg">0°</span>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+          <button class="cap" id="btn-rot">应用旋转角</button>
+          <button class="cap solid" id="btn-slew">转向并居中</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">当前构图</h2></div>
+      <div id="meta"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+let cur = null;            // 最近一次 framing 状态
+let selected = null;       // 检索选中的目标(含 magnitude/size_arcmin/type 等)
+let starfield = null;      // 缓存散点星场, 不随旋转重生成
+
+function genStars(cv){
+  const stars = [], n = 220;
+  for(let i=0;i<n;i++) stars.push({
+    x:Math.random()*cv.width, y:Math.random()*cv.height,
+    r:Math.random()*1.3+0.2, a:Math.random()*0.6+0.2,
+  });
+  return stars;
+}
+
+function drawFrame(){
+  const cv = document.getElementById("frame"), ctx = cv.getContext("2d");
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 深色背景
+  ctx.fillStyle = "#0c1120";
+  ctx.fillRect(0,0,cv.width,cv.height);
+  // 散点星场
+  if(!starfield) starfield = genStars(cv);
+  ctx.fillStyle = "#e9e2d0";
+  for(const s of starfield){
+    ctx.globalAlpha = s.a;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 中央传感器视场框, 按 rotation 旋转, 比例随 fov_width×fov_height
+  const rot = cur ? cur.rotation : 0;
+  const fw = cur && cur.fov_width_deg ? cur.fov_width_deg : 1;
+  const fh = cur && cur.fov_height_deg ? cur.fov_height_deg : 0.7;
+  const base = Math.min(cv.width, cv.height) * 0.5;
+  const aspect = fw / (fh || 1);
+  let bw = base, bh = base / aspect;
+  if(bh > base){ bh = base; bw = base * aspect; }
+
+  ctx.save();
+  ctx.translate(cv.width/2, cv.height/2);
+  ctx.rotate(rot * Math.PI / 180);
+  ctx.strokeStyle = "#c9a227";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-bw/2, -bh/2, bw, bh);
+  // 中心十字
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(-7,0); ctx.lineTo(7,0); ctx.moveTo(0,-7); ctx.lineTo(0,7);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // 框中心标目标名(水平绘, 不随框旋转, 便于阅读)
+  const nm = (cur && cur.target_name) ? cur.target_name : "—";
+  ctx.fillStyle = "#c9a227";
+  ctx.font = '15px "Noto Serif SC",Georgia,serif';
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(nm, cv.width/2, cv.height/2 - Math.max(bw,bh)/2 - 14);
+}
+
+function syncRot(v){
+  v = ((Math.round(v) % 360) + 360) % 360;
+  document.getElementById("rot-slider").value = v;
+  document.getElementById("rot-num").value = v;
+  document.getElementById("rot-deg").textContent = v + "°";
+}
+
+function renderMeta(){
+  const host = document.getElementById("meta");
+  if(!cur){ host.innerHTML = ""; return; }
+  const named = cur.target_name && cur.target_name.length;
+  const sel = selected;
+  host.innerHTML =
+     `<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${cur.target_name||'—'}</span></div>`
+    +`<div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel">${Ops.fmtRA(cur.ra_hours)}</span></div>`
+    +`<div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel">${Ops.fmtDec(cur.dec_degrees)}</span></div>`
+    +`<div class="kv"><span class="k">类型 <em>type</em></span><span class="v">${sel&&sel.type?sel.type:'—'}</span></div>`
+    +`<div class="kv"><span class="k">星等 <em>mag</em></span><span class="v">${sel&&sel.magnitude!=null?sel.magnitude.toFixed(1):'—'}</span></div>`
+    +`<div class="kv"><span class="k">视大小 <em>arcmin</em></span><span class="v">${sel&&sel.size_arcmin!=null?sel.size_arcmin.toFixed(1)+'′':'—'}</span></div>`
+    +`<div class="kv"><span class="k">旋转 <em>rotation</em></span><span class="v gold">${cur.rotation.toFixed(1)}°</span></div>`
+    +`<div class="kv"><span class="k">视场 <em>fov</em></span><span class="v">${cur.fov_width_deg.toFixed(2)}° × ${cur.fov_height_deg.toFixed(2)}°</span></div>`;
+}
+
+let rotDirty = false;     // 用户正在拖动旋转角, 暂停轮询覆盖
+async function refresh(){
+  const f = await Ops.get("/api/framing");
+  cur = f;
+  document.getElementById("f-state").textContent = f.target_name ? "已构图 · "+f.target_name : "未设目标";
+  if(!rotDirty) syncRot(f.rotation);
+  drawFrame();
+  renderMeta();
+}
+
+document.getElementById("btn-search").onclick = doSearch;
+document.getElementById("q").addEventListener("keydown",e=>{if(e.key==="Enter")doSearch();});
+async function doSearch(){
+  const q = document.getElementById("q").value;
+  const d = await Ops.get(`/api/framing/search?q=${encodeURIComponent(q)}`);
+  const ts = d.targets||[];
+  document.getElementById("results").innerHTML = ts.map((t,i)=>
+    `<div class="res" data-i="${i}">`
+    +`<span>${t.name} <em class="em muted">${t.type||''}</em></span>`
+    +`<span class="v cel">${Ops.fmtRA(t.ra_hours)} ${Ops.fmtDec(t.dec_degrees)}</span></div>`).join("")
+    || `<div class="muted em">无匹配</div>`;
+  document.querySelectorAll(".res").forEach(el=>el.onclick=()=> pickTarget(ts[+el.dataset.i]));
+}
+
+async function pickTarget(t){
+  if(!t) return;
+  if(!Ops.requireControl()) return;
+  selected = t;
+  const d = await Ops.action("framing","set_coordinates",
+    {target_name:t.name, ra:t.ra_hours, dec:t.dec_degrees});
+  if(d.ok){ Ops.status("ok",`已置入构图 · ${t.name}`); refresh(); }
+}
+
+// 旋转角联动: 滑块 / 数字框 实时重绘, 松手或点按钮才提交
+function onRotInput(v){
+  rotDirty = true;
+  syncRot(v);
+  if(cur) cur.rotation = ((Math.round(v)%360)+360)%360;
+  drawFrame(); renderMeta();
+}
+document.getElementById("rot-slider").addEventListener("input",e=>onRotInput(+e.target.value));
+document.getElementById("rot-num").addEventListener("input",e=>onRotInput(+e.target.value));
+
+document.getElementById("btn-rot").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const rotation = +document.getElementById("rot-num").value || 0;
+  const d = await Ops.action("framing","set_rotation",{rotation});
+  if(d.ok){ Ops.status("ok",`已设旋转角 ${(((rotation%360)+360)%360).toFixed(0)}°`); rotDirty=false; refresh(); }
+};
+
+document.getElementById("btn-slew").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  if(!cur || !cur.target_name){ Ops.status("err","请先检索并置入一个目标"); return; }
+  const d = await Ops.action("framing","slew_center",{});
+  if(d.ok) Ops.status("ok",`转向并居中 · ${cur.target_name}`);
+};
+
+document.addEventListener("ops:ready", refresh);
+Ops.onEvent((e)=>{ if(e.domain==="framing"||e.domain==="mount") refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, 2000);
+</script>
+</body>
+</html>

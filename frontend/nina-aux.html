@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 辅助</title>
+<style>
+  .ctl{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--hair-soft);flex-wrap:wrap;}
+  .ctl label{color:var(--ink-dim);font-size:14px;min-width:96px;}
+  .ctl input.fld{width:96px;text-align:right;}
+  .ctl .grow{flex:1;}
+  .sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;
+    border-bottom:1px solid var(--hair-soft);}
+  input[type=range]{accent-color:var(--gold);}
+  .big{font-size:22px;color:var(--gold);font-variant-numeric:tabular-nums;}
+  .na{color:var(--ink-dim);font-style:italic;}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <!-- Ⅰ 旋转器 -->
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>旋转器</h2><span class="en">Rotator</span>
+        <span id="rot-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="rotator"></div>
+
+      <!-- Ⅱ 圆顶 -->
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>圆顶</h2><span class="en">Dome</span>
+        <span id="dome-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="dome"></div>
+
+      <!-- Ⅲ 平场 -->
+      <div class="sec-h"><span class="rn">Ⅲ</span><h2>平场板</h2><span class="en">Flat Panel</span>
+        <span id="flat-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="flat"></div>
+
+      <!-- Ⅳ 开关 -->
+      <div class="sec-h"><span class="rn">Ⅳ</span><h2>电源开关</h2><span class="en">Switches</span></div>
+      <div id="switch"></div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">天文台条件</h2>
+        <span class="en">Conditions</span></div>
+      <div id="conditions"></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">气象</h2><span class="en">Weather</span></div>
+      <div id="weather"></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">安全</h2><span class="en">Safety</span></div>
+      <div id="safety"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const NA = `<div class="na">未连接 —— 到「设备」页连接</div>`;
+
+// ---------- 旋转器 ----------
+async function refreshRotator(){
+  const r = await Ops.get("/api/rotator");
+  document.getElementById("rot-state").textContent = r.connected ? (r.is_moving?"转动中":"静止") : "未连接";
+  const el = document.getElementById("rotator");
+  if(!r.connected){ el.innerHTML = NA; return; }
+  el.innerHTML =
+     `<div class="kv"><span class="k">天空角 <em>sky</em></span><span class="v gold">${r.position.toFixed(1)}°</span></div>`
+    +`<div class="kv"><span class="k">机械角 <em>mech</em></span><span class="v">${r.mechanical_position.toFixed(1)}°</span></div>`
+    +`<div class="ctl"><label>转到角度</label><input class="fld" id="rot-to" type="number" step="1" value="${r.position.toFixed(0)}">`
+      +`<button class="cap" id="rot-move">转动</button><button class="cap" id="rot-sync">同步</button></div>`;
+  document.getElementById("rot-move").onclick = async ()=>{ if(!Ops.requireControl())return;
+    const d=await Ops.action("rotator","move",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","旋转器转动"); };
+  document.getElementById("rot-sync").onclick = async ()=>{ if(!Ops.requireControl())return;
+    const d=await Ops.action("rotator","sync",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","已同步角度"); };
+}
+
+// ---------- 圆顶 ----------
+const SHUT_ZH={open:"已开",closed:"已闭",opening:"开启中",closing:"关闭中",error:"错误"};
+async function refreshDome(){
+  const d = await Ops.get("/api/dome");
+  document.getElementById("dome-state").textContent = d.connected ? (d.slewing?"转向中":SHUT_ZH[d.shutter]) : "未连接";
+  const el = document.getElementById("dome");
+  if(!d.connected){ el.innerHTML = NA; return; }
+  el.innerHTML =
+     `<div class="kv"><span class="k">天窗 <em>shutter</em></span><span class="v ${d.shutter==='open'?'gold':''}">${SHUT_ZH[d.shutter]}</span></div>`
+    +`<div class="kv"><span class="k">方位 <em>az</em></span><span class="v">${d.azimuth.toFixed(1)}°${d.slewing?' · 转向中':''}</span></div>`
+    +`<div class="kv"><span class="k">跟随赤道仪 <em>follow</em></span><span class="v ${d.following?'gold':'muted'}">${d.following?'开':'关'}</span></div>`
+    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">`
+      +`<button class="cap" data-a="open_shutter">开天窗</button><button class="cap" data-a="close_shutter">闭天窗</button>`
+      +`<button class="cap" data-a="park">停靠</button><button class="cap" data-a="find_home">归位</button>`
+      +`<button class="cap danger" data-a="stop">停止</button></div>`
+    +`<div class="ctl"><label>转到方位</label><input class="fld" id="dome-az" type="number" step="1" value="${d.azimuth.toFixed(0)}">`
+      +`<button class="cap" id="dome-slew">转向</button>`
+      +`<button class="cap toggle ${d.following?'on':''}" id="dome-follow">跟随</button></div>`;
+  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("dome",b.dataset.a,{}); if(r.ok)Ops.status("ok","圆顶:"+b.textContent); });
+  document.getElementById("dome-slew").onclick = async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("dome","slew",{azimuth:+document.getElementById("dome-az").value}); if(r.ok)Ops.status("ok","圆顶转向"); };
+  document.getElementById("dome-follow").onclick = async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("dome","set_follow",{on:!d.following}); if(r.ok)Ops.status("ok",d.following?"取消跟随":"开启跟随"); };
+}
+
+// ---------- 平场 ----------
+const COVER_ZH={open:"已开",closed:"已闭",opening:"开启中",closing:"关闭中",unknown:"未知",notpresent:"无盖"};
+async function refreshFlat(){
+  const f = await Ops.get("/api/flatdevice");
+  document.getElementById("flat-state").textContent = f.connected ? (f.light_on?"亮":"灭") : "未连接";
+  const el = document.getElementById("flat");
+  if(!f.connected){ el.innerHTML = NA; return; }
+  el.innerHTML =
+     `<div class="kv"><span class="k">盖板 <em>cover</em></span><span class="v">${COVER_ZH[f.cover]||f.cover}</span></div>`
+    +`<div class="kv"><span class="k">灯 <em>light</em></span><span class="v ${f.light_on?'gold':'muted'}">${f.light_on?'开':'关'}</span></div>`
+    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">`
+      +`<button class="cap" data-a="open_cover">开盖</button><button class="cap" data-a="close_cover">合盖</button>`
+      +`<button class="cap toggle ${f.light_on?'on':''}" id="flat-light">${f.light_on?'关灯':'开灯'}</button></div>`
+    +`<div class="ctl"><label>亮度 <em class="em">${f.brightness}/${f.max_brightness}</em></label>`
+      +`<input type="range" class="grow" id="flat-bright" min="0" max="${f.max_brightness}" value="${f.brightness}"></div>`;
+  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("flatdevice",b.dataset.a,{}); if(r.ok)Ops.status("ok","平场:"+b.textContent); });
+  document.getElementById("flat-light").onclick = async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("flatdevice","set_light",{on:!f.light_on}); if(r.ok)Ops.status("ok",f.light_on?"关灯":"开灯"); };
+  const sl = document.getElementById("flat-bright");
+  sl.onchange = async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("flatdevice","set_brightness",{brightness:+sl.value}); if(r.ok)Ops.status("ok","平场亮度 "+sl.value); };
+}
+
+// ---------- 开关 ----------
+async function refreshSwitch(){
+  const s = await Ops.get("/api/switch");
+  const el = document.getElementById("switch");
+  if(!s.connected){ el.innerHTML = NA; return; }
+  el.innerHTML = (s.switches||[]).map(sw=>{
+    const isBool = sw.min===0 && sw.max===1;
+    let ctl;
+    if(!sw.writable) ctl = `<span class="v">${sw.value}</span>`;
+    else if(isBool) ctl = `<button class="cap toggle ${sw.value>=0.5?'on':''}" data-id="${sw.id}" data-bool="1">${sw.value>=0.5?'开':'关'}</button>`;
+    else ctl = `<input class="fld" data-id="${sw.id}" type="number" min="${sw.min}" max="${sw.max}" value="${sw.value}" style="width:90px">`;
+    return `<div class="sw"><span class="k">${sw.name}${sw.writable?'':' <em class="em">只读</em>'}</span><span>${ctl}</span></div>`;
+  }).join("");
+  el.querySelectorAll("[data-bool]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
+    const on=b.textContent==="关"; const r=await Ops.action("switch","set",{id:+b.dataset.id,value:on?1:0});
+    if(r.ok)Ops.status("ok","开关已"+(on?"开":"关")); });
+  el.querySelectorAll("input[data-id]").forEach(i=>i.onchange=async ()=>{ if(!Ops.requireControl())return;
+    const r=await Ops.action("switch","set",{id:+i.dataset.id,value:+i.value}); if(r.ok)Ops.status("ok","开关已设值"); });
+}
+
+// ---------- 右栏:条件 / 气象 / 安全 ----------
+async function refreshRail(){
+  const c = await Ops.get("/api/conditions");
+  document.getElementById("conditions").innerHTML =
+     `<div style="text-align:center;margin:4px 0 10px"><div class="big">${c.sun_altitude==null?'—':c.sun_altitude+'°'}</div>`
+      +`<div class="muted" style="font-size:12px">日高度 · ${c.twilight||''}</div></div>`
+    +`<div class="kv"><span class="k">观测安全 <em>safe</em></span><span class="v ${c.is_safe?'gold':''}" `
+      +`style="${c.is_safe===false?'color:var(--err)':''}">${c.is_safe==null?'—':(c.is_safe?'安全':'不安全')}</span></div>`;
+
+  const w = await Ops.get("/api/weather");
+  document.getElementById("weather").innerHTML = w.connected ?
+     `<div class="kv"><span class="k">气温</span><span class="v">${w.temperature.toFixed(1)}°C</span></div>`
+    +`<div class="kv"><span class="k">湿度</span><span class="v">${w.humidity.toFixed(0)}%</span></div>`
+    +`<div class="kv"><span class="k">云量 <em>cloud</em></span><span class="v">${w.cloud_cover.toFixed(0)}%</span></div>`
+    +`<div class="kv"><span class="k">风速 <em>wind</em></span><span class="v">${w.wind_speed.toFixed(1)} m/s</span></div>`
+    +`<div class="kv"><span class="k">露点 <em>dew</em></span><span class="v">${w.dew_point.toFixed(1)}°C</span></div>`
+    +`<div class="kv"><span class="k">天光 <em>SQM</em></span><span class="v">${w.sky_quality.toFixed(1)}</span></div>` : NA;
+
+  const sf = await Ops.get("/api/safety");
+  document.getElementById("safety").innerHTML = sf.connected ?
+    `<div class="kv"><span class="k">状态</span><span class="v ${sf.is_safe?'gold':''}" style="${sf.is_safe?'':'color:var(--err)'}">${sf.is_safe?'安全 · 可观测':'不安全'}</span></div>` : NA;
+}
+
+function refreshAll(){ refreshRotator(); refreshDome(); refreshFlat(); refreshSwitch(); refreshRail(); }
+document.addEventListener("ops:ready", refreshAll);
+Ops.onEvent((e)=>{
+  if(["rotator","dome","flatdevice","switch","weather","safetymonitor"].includes(e.domain)) refreshAll();
+});
+setInterval(()=>{ if(!document.hidden) refreshAll(); }, 2500);
+</script>
+</body>
+</html>

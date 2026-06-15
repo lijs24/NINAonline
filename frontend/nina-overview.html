@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 总览</title>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <!-- Ⅰ 设备一览 -->
+      <div class="sec-h"><span class="rn">Ⅰ</span><h2>设备一览</h2>
+        <span class="en">Equipment</span></div>
+      <div id="dev-grid" style="columns:2;column-gap:40px;"></div>
+
+      <!-- Ⅱ 当前目标 / 序列 -->
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>当前目标 · 序列</h2>
+        <span class="en">Target & Sequence</span></div>
+      <div id="seq-block"></div>
+
+      <!-- Ⅲ 最新影像 -->
+      <div class="sec-h"><span class="rn">Ⅲ</span><h2>最新影像</h2>
+        <span class="en">Last Frame</span></div>
+      <div id="img-block" class="muted em">尚无影像</div>
+    </div>
+
+    <!-- 右侧注记栏 -->
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">观测站</h2></div>
+      <div id="site-block"></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">事件流</h2>
+        <span class="en">Log</span></div>
+      <div id="evt-feed" style="font-size:13px;line-height:1.9"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const DEV_LABELS = {camera:["相机","Camera"],mount:["赤道仪","Mount"],focuser:["对焦","Focuser"],
+  filterwheel:["滤镜轮","Filter"],guider:["导星","Guider"],rotator:["旋转器","Rotator"],
+  dome:["圆顶","Dome"],flatdevice:["平场","Flat"],switch:["开关","Switch"],
+  weather:["气象","Weather"],safetymonitor:["安全","Safety"]};
+
+function devRow(d){
+  const [zh] = DEV_LABELS[d.type]||[d.type,""];
+  const on = d.connected;
+  return `<div class="kv"><span class="k"><span class="dot ${on?'on':''}"></span> ${zh}</span>`
+    +`<span class="v ${on?'gold':'muted'}">${on?(d.detail||'已连接'):'—'}</span></div>`;
+}
+
+async function refreshDevices(){
+  const d = await Ops.get("/api/devices");
+  document.getElementById("dev-grid").innerHTML = (d.devices||[]).map(devRow).join("");
+}
+
+async function refreshSequence(){
+  const s = await Ops.get("/api/sequence");
+  const el = document.getElementById("seq-block");
+  const running = s.running;
+  const pct = Math.round((s.progress||0)*100);
+  const plan = s.plan||{};
+  el.innerHTML =
+    `<div class="kv"><span class="k">计划 <em>plan</em></span><span class="v">${plan.name||'—'}</span></div>`
+    +`<div class="kv"><span class="k">状态 <em>status</em></span><span class="v ${running?'gold':''}">`
+      +`${({idle:'空闲',running:'运行中',paused:'暂停',finished:'已完成',error:'错误'})[s.status]||s.status}</span></div>`
+    +`<div class="kv"><span class="k">当前 <em>action</em></span><span class="v">${s.current_action||'—'}</span></div>`
+    +`<div class="kv"><span class="k">进度 <em>frames</em></span><span class="v gold">${s.completed_frames}/${s.total_frames} · ${pct}%</span></div>`
+    + progressBar(pct);
+}
+
+function progressBar(pct){
+  return `<div style="height:2px;background:var(--hair);margin:12px 0 4px">`
+    +`<div style="height:2px;width:${pct}%;background:var(--gold);transition:width .5s"></div></div>`;
+}
+
+async function refreshMountTarget(){
+  const m = await Ops.get("/api/mount");
+  if(!m.connected) return;
+  const el = document.getElementById("seq-block");
+  el.insertAdjacentHTML("afterbegin",
+    `<div class="kv"><span class="k">指向 <em>RA·Dec</em></span>`
+    +`<span class="v cel">${Ops.fmtRA(m.ra_hours)} &nbsp; ${Ops.fmtDec(m.dec_degrees)}</span></div>`
+    +`<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${m.target_name||'—'}</span></div>`);
+}
+
+async function refreshImage(){
+  const r = await Ops.get("/api/camera/current-image");
+  const el = document.getElementById("img-block");
+  if(!r.image){ el.innerHTML = '<span class="muted em">尚无影像</span>'; return; }
+  const im = r.image;
+  el.innerHTML =
+    `<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">`
+    +`<img src="/api/camera/image?image_id=${im.image_id}&t=${Date.now()}" `
+      +`style="width:380px;max-width:100%;border:1px solid var(--hair)">`
+    +`<div style="min-width:180px">`
+      +`<div class="kv"><span class="k">目标</span><span class="v">${im.target||'—'}</span></div>`
+      +`<div class="kv"><span class="k">滤镜·曝光</span><span class="v">${im.filter} · ${im.exposure_s}s</span></div>`
+      +`<div class="kv"><span class="k">HFR <em>focus</em></span><span class="v gold">${im.hfr}</span></div>`
+      +`<div class="kv"><span class="k">星点 <em>stars</em></span><span class="v">${im.stars}</span></div>`
+      +`<div class="kv"><span class="k">温度</span><span class="v">${im.temperature}°C</span></div>`
+    +`</div></div>`;
+}
+
+async function refreshSite(){
+  const s = window.OPS_BOOT || await Ops.get("/api/status");
+  const site = s.site||{};
+  const g = await Ops.get("/api/guider");
+  document.getElementById("site-block").innerHTML =
+    `<div class="kv"><span class="k">纬度 <em>lat</em></span><span class="v">${(site.lat||0).toFixed(3)}°</span></div>`
+    +`<div class="kv"><span class="k">经度 <em>lng</em></span><span class="v">${(site.lng||0).toFixed(3)}°</span></div>`
+    +`<div class="kv"><span class="k">后端 <em>mode</em></span><span class="v gold">${s.provider==='sim'?'模拟引擎':'NINA 实机'}</span></div>`
+    +`<div class="kv"><span class="k">导星 RMS</span><span class="v ${g.state==='guiding'?'gold':'muted'}">`
+      +`${g.state==='guiding'?g.rms_total+'″':'—'}</span></div>`;
+}
+
+const EVT_ZH = {"IMAGE-SAVE":"已保存影像","MOUNT-SLEWED":"赤道仪到位","MOUNT-SLEW-START":"开始转向",
+  "AUTOFOCUS-STARTING":"自动对焦开始","AUTOFOCUS-FINISHED":"自动对焦完成","GUIDER-START":"导星开始",
+  "GUIDER-DITHER":"抖动","GUIDER-STOP":"导星停止","SEQUENCE-STARTING":"序列开始","SEQUENCE-FINISHED":"序列完成",
+  "CAMERA-CONNECTED":"相机已连接","MOUNT-PARKED":"赤道仪已停靠","FILTERWHEEL-CHANGED":"切换滤镜"};
+const feed = [];
+function pushEvent(evt){
+  const zh = EVT_ZH[evt.event];
+  if(!zh) return;
+  const t = (evt.time||"").slice(11,19);
+  feed.unshift(`<div><span class="muted">${t}</span> · <span class="v">${zh}</span></div>`);
+  feed.splice(20);
+  document.getElementById("evt-feed").innerHTML = feed.join("");
+}
+
+function refreshAll(){
+  refreshDevices(); refreshSequence().then(refreshMountTarget);
+  refreshImage(); refreshSite();
+}
+document.addEventListener("ops:ready", refreshAll);
+Ops.onEvent((evt)=>{ pushEvent(evt);
+  if(["IMAGE-SAVE"].includes(evt.event)) refreshImage();
+  if(evt.domain==="sequence"||evt.event==="STATE-UPDATED") refreshSequence().then(refreshMountTarget);
+});
+setInterval(()=>{ if(!document.hidden) refreshAll(); }, 5000);
+</script>
+</body>
+</html>

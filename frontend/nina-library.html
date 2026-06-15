@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 图库</title>
+<style>
+  #big{width:100%;border:1px solid var(--hair);background:var(--sky-2);min-height:320px;
+    display:block;object-fit:contain;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px;margin-top:6px;}
+  .cell{cursor:pointer;}
+  .cell img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block;
+    border:1px solid var(--hair);background:var(--sky-2);transition:border-color .25s;}
+  .cell:hover img{border-color:var(--gold);}
+  .cell.sel img{border-color:var(--gold);}
+  .cap-cn{font-size:12px;color:var(--ink-dim);margin-top:5px;line-height:1.5;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  @media(max-width:880px){#big{min-height:240px;}}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <!-- 左主区:大图 + 过滤 + 网格 -->
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>概览</h2>
+        <span class="en">Overview</span><span id="lib-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="summary"></div>
+
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>影像</h2><span class="en">Frames</span></div>
+      <div class="filters">
+        <span class="muted" style="font-size:13px">目标 <em class="em">target</em></span>
+        <select class="fld" id="f-target" style="min-width:140px"></select>
+        <span class="muted" style="font-size:13px">滤镜 <em class="em">filter</em></span>
+        <select class="fld" id="f-filter" style="min-width:110px"></select>
+        <button class="cap" id="btn-clear">全部</button>
+      </div>
+      <div id="grid" class="grid"></div>
+      <div id="grid-empty"></div>
+    </div>
+
+    <!-- 右栏:选中帧大图与元数据 -->
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">细览</h2>
+        <span class="en">Detail</span></div>
+      <img id="big" alt="选中影像" style="display:none">
+      <div id="meta" class="muted em" style="margin-top:12px">点选下方影像查看细节</div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+let selId = null;
+
+function fmtInteg(sec){
+  sec = +sec || 0;
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.round(sec%60);
+  if(h) return `${h} 时 ${m} 分`;
+  if(m) return `${m} 分 ${s} 秒`;
+  return `${s} 秒`;
+}
+
+async function refreshSummary(){
+  const s = await Ops.get("/api/library/summary");
+  document.getElementById("lib-state").textContent =
+    s.total ? `${s.total} 帧` : "空库";
+  const byFilter = s.by_filter || {}, byTarget = s.by_target || {};
+  let html =
+     `<div class="kv"><span class="k">总帧数 <em>frames</em></span><span class="v gold">${s.total||0}</span></div>`
+    +`<div class="kv"><span class="k">总积分 <em>integration</em></span><span class="v gold">${fmtInteg(s.total_integration_s)}</span></div>`;
+  const fk = Object.keys(byFilter);
+  if(fk.length){
+    html += `<div class="kv"><span class="k">按滤镜 <em>by filter</em></span><span class="v muted"></span></div>`;
+    html += fk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byFilter[k]}</span></div>`).join("");
+  }
+  const tk = Object.keys(byTarget);
+  if(tk.length){
+    html += `<div class="kv"><span class="k">按目标 <em>by target</em></span><span class="v muted"></span></div>`;
+    html += tk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byTarget[k]}</span></div>`).join("");
+  }
+  document.getElementById("summary").innerHTML = html;
+
+  // 过滤下拉(保留当前选择)
+  syncSelect("f-target", tk, "全部目标");
+  syncSelect("f-filter", fk, "全部滤镜");
+}
+
+function syncSelect(id, keys, allLabel){
+  const sel = document.getElementById(id), cur = sel.value;
+  const opts = [`<option value="">${allLabel}</option>`].concat(keys.map(k=>`<option value="${k}">${k}</option>`));
+  sel.innerHTML = opts.join("");
+  if(keys.indexOf(cur) >= 0) sel.value = cur;
+}
+
+async function refreshList(){
+  const t = document.getElementById("f-target").value;
+  const f = document.getElementById("f-filter").value;
+  const qs = `target=${encodeURIComponent(t)}&filter=${encodeURIComponent(f)}&limit=200`;
+  const d = await Ops.get(`/api/library/list?${qs}`);
+  const items = d.items || [];
+  const grid = document.getElementById("grid"), empty = document.getElementById("grid-empty");
+  if(!items.length){
+    grid.innerHTML = "";
+    empty.innerHTML = `<div class="muted em" style="margin-top:8px">尚无影像 —— 到相机或序列页拍摄</div>`;
+    return;
+  }
+  empty.innerHTML = "";
+  grid.innerHTML = items.map(im=>
+     `<div class="cell${im.image_id===selId?' sel':''}" data-id="${im.image_id}">`
+    +`<img loading="lazy" src="/api/library/thumb?image_id=${im.image_id}" alt="#${im.image_id}">`
+    +`<div class="cap-cn">${im.filter||'—'} · ${im.exposure_s}s · HFR ${(+im.hfr).toFixed(2)}</div></div>`).join("");
+  grid.querySelectorAll(".cell").forEach(el=>{
+    el.onclick = ()=> selectImage(+el.dataset.id, items.find(x=>x.image_id===+el.dataset.id));
+  });
+}
+
+function selectImage(id, im){
+  selId = id;
+  document.querySelectorAll(".cell").forEach(c=>c.classList.toggle("sel", +c.dataset.id===id));
+  const big = document.getElementById("big");
+  big.style.display = "block";
+  big.src = `/api/library/image?image_id=${id}`;
+  if(!im){ return; }
+  document.getElementById("meta").className = "";
+  document.getElementById("meta").innerHTML =
+     `<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${im.target||'—'}</span></div>`
+    +`<div class="kv"><span class="k">滤镜 <em>filter</em></span><span class="v">${im.filter||'—'}</span></div>`
+    +`<div class="kv"><span class="k">曝光 <em>exposure</em></span><span class="v">${im.exposure_s} s</span></div>`
+    +`<div class="kv"><span class="k">增益 <em>gain</em></span><span class="v">${im.gain}</span></div>`
+    +`<div class="kv"><span class="k">偏置 <em>offset</em></span><span class="v">${im.offset}</span></div>`
+    +`<div class="kv"><span class="k">合并 <em>bin</em></span><span class="v">${im.bin}×${im.bin}</span></div>`
+    +`<div class="kv"><span class="k">HFR</span><span class="v gold">${(+im.hfr).toFixed(2)}</span></div>`
+    +`<div class="kv"><span class="k">星数 <em>stars</em></span><span class="v">${im.stars}</span></div>`
+    +`<div class="kv"><span class="k">温度 <em>°C</em></span><span class="v cel">${(+im.temperature).toFixed(1)}</span></div>`
+    +`<div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v">${im.width}×${im.height}</span></div>`
+    +`<div class="kv"><span class="k">均值 <em>mean</em></span><span class="v">${(+im.mean).toFixed(0)}</span></div>`
+    +`<div class="kv"><span class="k">时间 <em>captured</em></span><span class="v">${im.captured_at||'—'}</span></div>`;
+  Ops.status("ok", `影像 #${id} · ${im.target||'—'} · ${im.filter||'—'} ${im.exposure_s}s · HFR ${(+im.hfr).toFixed(2)}`);
+}
+
+async function refresh(){ await refreshSummary(); await refreshList(); }
+
+document.getElementById("f-target").addEventListener("change", refreshList);
+document.getElementById("f-filter").addEventListener("change", refreshList);
+document.getElementById("btn-clear").onclick = ()=>{
+  document.getElementById("f-target").value = "";
+  document.getElementById("f-filter").value = "";
+  refreshList();
+};
+
+document.addEventListener("ops:ready", refresh);
+Ops.onEvent((e)=>{ if(e.event==="IMAGE-SAVE") refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, 5000);
+</script>
+</body>
+</html>

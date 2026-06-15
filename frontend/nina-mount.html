@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 赤道仪</title>
+<style>
+  .pad{display:grid;grid-template-columns:repeat(3,52px);gap:8px;justify-content:center;margin:8px 0;}
+  .pad button{height:46px;}
+  .pad .mid{display:flex;align-items:center;justify-content:center;color:var(--ink-dim);font-size:12px;}
+  .res{padding:6px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
+    gap:12px;cursor:pointer;}
+  .res:hover{color:var(--gold);}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>指向</h2>
+        <span class="en">Pointing</span><span id="m-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="pos"></div>
+
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>目标 · 转向</h2><span class="en">GoTo</span></div>
+      <div style="display:flex;gap:10px;margin-bottom:8px">
+        <input class="fld" id="q" placeholder="检索 M / NGC / IC / 名称…" style="flex:1">
+        <button class="cap" id="btn-search">检索</button>
+      </div>
+      <div id="results"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <input class="fld" id="ra" placeholder="RA 小时" style="width:120px">
+        <input class="fld" id="dec" placeholder="Dec 度" style="width:120px">
+        <button class="cap solid" id="btn-goto">转向 GoTo</button>
+        <button class="cap danger" id="btn-stop">停止</button>
+      </div>
+
+      <div class="sec-h"><span class="rn">Ⅲ</span><h2>手动微动</h2><span class="en">Manual</span></div>
+      <div class="pad">
+        <div></div><button class="cap" data-dir="n">北 N</button><div></div>
+        <button class="cap" data-dir="w">西 W</button><div class="mid">微动</div><button class="cap" data-dir="e">东 E</button>
+        <div></div><button class="cap" data-dir="s">南 S</button><div></div>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">控制</h2></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="cap" id="btn-track">跟踪</button>
+        <button class="cap" id="btn-park">停靠</button>
+        <button class="cap" id="btn-unpark">解锁</button>
+        <button class="cap" id="btn-home">归位</button>
+        <button class="cap" id="btn-flip">子午翻转</button>
+      </div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">天象</h2></div>
+      <div id="sky"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+async function refresh(){
+  const m = await Ops.get("/api/mount");
+  document.getElementById("m-state").textContent = !m.connected ? "未连接"
+    : m.slewing?"转向中":(m.tracking?"跟踪中":"静止")+(m.at_park?" · 已停靠":"");
+  document.getElementById("pos").innerHTML = m.connected ?
+     `<div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel">${Ops.fmtRA(m.ra_hours)}</span></div>`
+    +`<div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel">${Ops.fmtDec(m.dec_degrees)}</span></div>`
+    +`<div class="kv"><span class="k">高度 <em>Alt</em></span><span class="v">${m.altitude.toFixed(2)}°</span></div>`
+    +`<div class="kv"><span class="k">方位 <em>Az</em></span><span class="v">${m.azimuth.toFixed(2)}°</span></div>`
+    +`<div class="kv"><span class="k">恒星时 <em>LST</em></span><span class="v">${m.lst_text}</span></div>`
+    +`<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${m.target_name||'—'}</span></div>`
+    : `<div class="muted em">赤道仪未连接 —— 请到「设备」页连接</div>`;
+  document.getElementById("sky").innerHTML = m.connected ?
+     `<div class="kv"><span class="k">中天 <em>meridian</em></span><span class="v">`
+      +`${m.time_to_meridian_h>0?'还有 '+m.time_to_meridian_h.toFixed(2)+'ʰ':'已过 '+Math.abs(m.time_to_meridian_h).toFixed(2)+'ʰ'}</span></div>`
+    +`<div class="kv"><span class="k">天球侧 <em>pier</em></span><span class="v">${({east:'东',west:'西',unknown:'未知'})[m.side_of_pier]}</span></div>`
+    +`<div class="kv"><span class="k">跟踪模式</span><span class="v">${m.tracking?m.tracking_mode:'停'}</span></div>` : "";
+  document.getElementById("btn-track").classList.toggle("solid", m.tracking);
+}
+
+document.getElementById("btn-search").onclick = doSearch;
+document.getElementById("q").addEventListener("keydown",e=>{if(e.key==="Enter")doSearch();});
+async function doSearch(){
+  const q = document.getElementById("q").value;
+  const d = await Ops.get(`/api/framing/search?q=${encodeURIComponent(q)}`);
+  document.getElementById("results").innerHTML = (d.targets||[]).map(t=>
+    `<div class="res" data-ra="${t.ra_hours}" data-dec="${t.dec_degrees}" data-name="${t.name}">`
+    +`<span>${t.name} <em class="em muted">${t.type}</em></span>`
+    +`<span class="v cel">${Ops.fmtRA(t.ra_hours)} ${Ops.fmtDec(t.dec_degrees)}</span></div>`).join("")
+    || `<div class="muted em">无匹配</div>`;
+  document.querySelectorAll(".res").forEach(el=>el.onclick=()=>{
+    document.getElementById("ra").value = (+el.dataset.ra).toFixed(4);
+    document.getElementById("dec").value = (+el.dataset.dec).toFixed(4);
+    document.getElementById("ra").dataset.name = el.dataset.name;
+    Ops.status("ok",`已选 ${el.dataset.name}`);
+  });
+}
+
+document.getElementById("btn-goto").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const ra=+document.getElementById("ra").value, dec=+document.getElementById("dec").value;
+  if(isNaN(ra)||isNaN(dec)){ Ops.status("err","请先填写或检索目标坐标"); return; }
+  const d = await Ops.action("mount","slew",{ra,dec,target_name:document.getElementById("ra").dataset.name||"手动目标"});
+  if(d.ok) Ops.status("ok","开始转向");
+};
+document.getElementById("btn-stop").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","stop",{}); if(d.ok)Ops.status("warn","已停止转向");} };
+document.getElementById("btn-track").onclick = async ()=>{ if(!Ops.requireControl())return; const m=await Ops.get("/api/mount"); const d=await Ops.action("mount","set_tracking",{on:!m.tracking}); if(d.ok)Ops.status("ok",m.tracking?"已停止跟踪":"已开启跟踪"); };
+document.getElementById("btn-park").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","park",{}); if(d.ok)Ops.status("ok","正在停靠");} };
+document.getElementById("btn-unpark").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","unpark",{}); if(d.ok)Ops.status("ok","已解锁");} };
+document.getElementById("btn-home").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","home",{}); if(d.ok)Ops.status("ok","正在归位");} };
+document.getElementById("btn-flip").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","flip",{}); if(d.ok)Ops.status("ok","子午翻转中");} };
+document.querySelectorAll(".pad button").forEach(b=>b.onclick=async ()=>{
+  if(!Ops.requireControl())return;
+  await Ops.action("mount","move_axis",{direction:b.dataset.dir,rate:0.5});
+});
+
+document.addEventListener("ops:ready", refresh);
+Ops.onEvent((e)=>{ if(e.domain==="mount") refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, 1500);
+</script>
+</body>
+</html>

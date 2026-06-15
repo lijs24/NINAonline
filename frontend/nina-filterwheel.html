@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 滤镜轮</title>
+<style>
+  .now{margin:2px 0 4px;display:flex;align-items:baseline;gap:14px;}
+  .now .big{font-size:34px;color:var(--gold);letter-spacing:1px;line-height:1.1;}
+  .now .sub{font-size:13px;}
+  .slot{display:flex;align-items:center;gap:14px;padding:9px 0;
+    border-bottom:1px solid var(--hair-soft);cursor:pointer;
+    transition:color .25s;}
+  .slot:hover{color:var(--gold);}
+  .slot[aria-disabled="true"]{cursor:default;}
+  .slot[aria-disabled="true"]:hover{color:inherit;}
+  .slot .pos{width:34px;text-align:center;color:var(--ink-dim);
+    font-variant-numeric:tabular-nums;}
+  .slot.cur .pos{color:var(--gold);}
+  .slot .nm{flex:1;}
+  .slot.cur .nm{color:var(--gold);}
+  .slot .off{font-variant-numeric:tabular-nums;color:var(--ink-dim);font-size:13px;}
+  .slot .edit{width:120px;text-align:left;}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="col-rail">
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>当前滤镜</h2>
+        <span class="en">Current Filter</span><span id="fw-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="now"></div>
+
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2>滤镜槽 · 切换</h2><span class="en">Slots · Change</span>
+        <button class="cap" id="btn-rename" style="margin-left:auto">编辑名称</button></div>
+      <div id="slots"></div>
+      <div id="rename-bar" style="display:none;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <button class="cap solid" id="btn-save">保存名称</button>
+        <button class="cap" id="btn-cancel">取消</button>
+      </div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">概况</h2></div>
+      <div id="summary"></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">对焦偏置</h2></div>
+      <div id="offsets"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+let editing = false;
+
+async function refresh(){
+  if(editing) return;
+  const fw = await Ops.get("/api/filterwheel");
+  const cur = (fw.filters||[]).find(f=>f.position===fw.position);
+
+  document.getElementById("fw-state").textContent = !fw.connected ? "未连接"
+    : fw.is_moving ? "切换中…" : "就绪";
+
+  if(!fw.connected){
+    document.getElementById("now").innerHTML =
+      `<div class="muted em">滤镜轮未连接 —— 请到「设备」页连接</div>`;
+    document.getElementById("slots").innerHTML = "";
+    document.getElementById("summary").innerHTML = "";
+    document.getElementById("offsets").innerHTML = "";
+    document.getElementById("btn-rename").disabled = true;
+    return;
+  }
+  document.getElementById("btn-rename").disabled = false;
+
+  document.getElementById("now").innerHTML =
+     `<div class="now"><span class="big">${cur?cur.name:'—'}</span>`
+    +`<span class="sub muted">槽位 <span class="v gold">#${fw.position}</span>`
+    +`${fw.is_moving?' · <span class="em">切换中…</span>':''}</span></div>`
+    +`<div class="kv"><span class="k">轮组 <em>wheel</em></span><span class="v">${fw.name||'—'}</span></div>`
+    +`<div class="kv"><span class="k">对焦偏置 <em>offset</em></span><span class="v">${cur?cur.focus_offset:0} <span class="muted">步</span></span></div>`;
+
+  renderSlots(fw);
+
+  document.getElementById("summary").innerHTML =
+     `<div class="kv"><span class="k">槽位数 <em>count</em></span><span class="v gold">${fw.filters.length}</span></div>`
+    +`<div class="kv"><span class="k">当前槽 <em>position</em></span><span class="v gold">#${fw.position}</span></div>`
+    +`<div class="kv"><span class="k">状态 <em>state</em></span><span class="v">${fw.is_moving?'切换中':'就绪'}</span></div>`;
+
+  document.getElementById("offsets").innerHTML = fw.filters.map(f=>
+     `<div class="kv"><span class="k">${f.name} <em>#${f.position}</em></span>`
+    +`<span class="v${f.position===fw.position?' gold':''}">${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`).join("");
+}
+
+function renderSlots(fw){
+  const el = document.getElementById("slots");
+  el.innerHTML = fw.filters.map(f=>{
+    const cur = f.position===fw.position;
+    return `<div class="slot${cur?' cur':''}" data-pos="${f.position}"${fw.is_moving?' aria-disabled="true"':''}>`
+      +`<span class="pos">${cur?'<span class="dot on" style="margin-right:6px"></span>':''}#${f.position}</span>`
+      +`<span class="nm">${f.name}</span>`
+      +`<span class="off">焦偏 ${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`;
+  }).join("");
+  if(fw.is_moving) return;
+  el.querySelectorAll(".slot").forEach(s=>s.onclick=async ()=>{
+    const pos = +s.dataset.pos;
+    if(pos===fw.position){ Ops.status("ok","已是当前滤镜"); return; }
+    if(!Ops.requireControl()) return;
+    const d = await Ops.action("filterwheel","change",{position:pos});
+    if(d.ok) Ops.status("ok",`切换至 #${pos} ${fw.filters.find(x=>x.position===pos).name}`);
+  });
+}
+
+// —— 名称编辑 ——————————————————————————————————————————————
+document.getElementById("btn-rename").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const fw = await Ops.get("/api/filterwheel");
+  if(!fw.connected || !fw.filters.length) return;
+  editing = true;
+  document.getElementById("slots").innerHTML = fw.filters.map(f=>
+     `<div class="slot" aria-disabled="true">`
+    +`<span class="pos">#${f.position}</span>`
+    +`<input class="fld edit nm-in" data-pos="${f.position}" value="${f.name}">`
+    +`<span class="off">焦偏 ${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`).join("");
+  document.getElementById("rename-bar").style.display = "flex";
+  document.getElementById("btn-rename").disabled = true;
+  Ops.status("warn","编辑滤镜名称 —— 保存后下发轮组");
+};
+document.getElementById("btn-cancel").onclick = ()=>{
+  editing = false;
+  document.getElementById("rename-bar").style.display = "none";
+  document.getElementById("btn-rename").disabled = false;
+  refresh();
+};
+document.getElementById("btn-save").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const names = Array.from(document.querySelectorAll(".nm-in"))
+    .sort((a,b)=>(+a.dataset.pos)-(+b.dataset.pos))
+    .map(i=>i.value.trim()||("F"+i.dataset.pos));
+  const d = await Ops.action("filterwheel","set_names",{names});
+  if(d.ok){
+    Ops.status("ok","滤镜名称已更新");
+    editing = false;
+    document.getElementById("rename-bar").style.display = "none";
+    document.getElementById("btn-rename").disabled = false;
+    refresh();
+  }
+};
+
+document.addEventListener("ops:ready", refresh);
+Ops.onEvent((e)=>{ if(e.event==="FILTERWHEEL-CHANGED" || e.domain==="filterwheel") refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, 1500);
+</script>
+</body>
+</html>

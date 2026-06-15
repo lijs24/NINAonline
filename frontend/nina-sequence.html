@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 序列</title>
+<style>
+  /* 计划全局选项行 */
+  .opt{display:flex;align-items:center;gap:14px;padding:8px 0;border-bottom:1px solid var(--hair-soft);flex-wrap:wrap;}
+  .opt label{color:var(--ink-dim);font-size:14px;min-width:120px;}
+  .opt input.fld{width:96px;text-align:right;}
+  /* 目标块 —— 不是卡片,仅用顶部发丝线分隔 */
+  .tgt{padding:18px 0;border-top:1px solid var(--hair);}
+  .tgt-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .tgt-hd input.fld{font-size:15px;}
+  .tgt-hd .name{flex:1;min-width:160px;}
+  .tgt-hd .num{color:var(--gold);letter-spacing:2px;font-size:14px;}
+  /* 曝光行表格 —— 仅行下发丝线,无盒 */
+  table.exp{width:100%;border-collapse:collapse;margin:6px 0;}
+  table.exp th{color:var(--ink-dim);font-weight:400;font-size:11.5px;font-style:italic;
+    text-align:right;padding:4px 8px;border-bottom:1px solid var(--hair);white-space:nowrap;}
+  table.exp th:first-child{text-align:left;}
+  table.exp td{padding:4px 8px;border-bottom:1px solid var(--hair-soft);text-align:right;
+    font-variant-numeric:tabular-nums;}
+  table.exp td:first-child{text-align:left;}
+  table.exp input.fld,table.exp select.fld{width:100%;text-align:right;padding:4px 10px;font-size:13px;}
+  table.exp select.fld{text-align:left;}
+  table.exp .done{color:var(--gold);}
+  table.exp .x{cursor:pointer;color:var(--ink-dim);border:none;background:none;font-family:var(--serif);
+    font-size:16px;line-height:1;padding:0 4px;}
+  table.exp .x:hover{color:var(--err);}
+  .tgt-opt{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:10px;color:var(--ink-dim);
+    font-size:13px;}
+  .tgt-opt label{display:inline-flex;align-items:center;gap:6px;}
+  .tgt-opt input[type=number]{width:62px;text-align:right;}
+  .row-acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+  .res{padding:6px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
+    gap:12px;cursor:pointer;font-size:13px;}
+  .res:hover{color:var(--gold);}
+  /* 运行进度条 仿 overview */
+  .prog{height:3px;background:var(--hair);margin:14px 0 4px;}
+  .prog>div{height:3px;width:0;background:var(--gold);transition:width .4s;}
+  /* 日志 —— 衬线,倒序滚动,无盒,仅行间发丝线 */
+  #log{max-height:280px;overflow-y:auto;margin-top:6px;}
+  #log .ln{padding:5px 0;border-bottom:1px solid var(--hair-soft);font-size:13px;color:var(--ink);
+    display:flex;gap:10px;}
+  #log .ln:first-child{color:var(--gold);}
+  #log .ln .seq{color:var(--ink-dim);font-variant-numeric:tabular-nums;min-width:30px;text-align:right;}
+  .toggle.on{border-color:var(--gold);color:var(--gold);}
+  @media(max-width:880px){.tgt-hd .name{min-width:120px;}}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+
+  <!-- ===================== Ⅰ 计划编辑器 ===================== -->
+  <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>计划</h2>
+    <span class="en">Plan</span>
+    <span id="cam-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+
+  <div id="editor">
+    <div class="opt">
+      <label>计划名 <em class="em">name</em></label>
+      <input class="fld" id="plan-name" placeholder="未命名计划" style="flex:1;min-width:200px;text-align:left">
+    </div>
+    <div class="opt">
+      <label>制冷至 <em class="em">cool to</em></label>
+      <button class="cap toggle" id="tg-cool">启用</button>
+      <input class="fld" id="cool-to" type="number" step="0.5" value="-10"> <span class="muted">°C</span>
+    </div>
+    <div class="opt">
+      <label>结束回温 <em class="em">warm at end</em></label>
+      <button class="cap toggle" id="tg-warm">启用</button>
+    </div>
+    <div class="opt">
+      <label>结束停靠 <em class="em">park at end</em></label>
+      <button class="cap toggle" id="tg-park">启用</button>
+    </div>
+
+    <!-- 高级触发 / 条件 -->
+    <div class="opt">
+      <label>重复轮数 <em class="em">loop</em></label>
+      <input class="fld" id="loop-count" type="number" min="1" value="1"> <span class="muted">轮</span>
+    </div>
+    <div class="opt">
+      <label>HFR 拒帧 <em class="em">reject hfr&gt;</em></label>
+      <button class="cap toggle" id="tg-reject">启用</button>
+      <input class="fld" id="reject-hfr" type="number" step="0.1" value="3"> <span class="muted">超此 HFR 判废</span>
+    </div>
+    <div class="opt">
+      <label>不安全中止 <em class="em">abort unsafe</em></label>
+      <button class="cap toggle" id="tg-unsafe">启用</button> <span class="muted">安全监视器报警即停</span>
+    </div>
+    <div class="opt">
+      <label>暮光起止 <em class="em">sun alt</em></label>
+      <button class="cap toggle" id="tg-tw">启用</button>
+      开始 <input class="fld" id="tw-start" type="number" value="-12" style="width:64px">
+      停止 <input class="fld" id="tw-stop" type="number" value="-6" style="width:64px"> <span class="muted">日高度°</span>
+    </div>
+
+    <div id="targets"></div>
+
+    <div class="row-acts" style="margin-top:18px">
+      <button class="cap" id="btn-add-target">＋ 增加目标</button>
+      <button class="cap solid" id="btn-save">保存计划 · Save</button>
+    </div>
+  </div>
+
+  <!-- ===================== Ⅱ 运行 ===================== -->
+  <div class="sec-h"><span class="rn">Ⅱ</span><h2>运行</h2><span class="en">Run</span>
+    <span id="run-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+
+  <div class="row-acts" style="margin-bottom:6px">
+    <button class="cap solid" id="btn-start">开始 Start</button>
+    <button class="cap" id="btn-pause">暂停 Pause</button>
+    <button class="cap" id="btn-resume">继续 Resume</button>
+    <button class="cap danger" id="btn-stop">停止 Stop</button>
+    <button class="cap" id="btn-reset">重置 Reset</button>
+  </div>
+
+  <div class="col-rail" style="margin-top:18px">
+    <div>
+      <div id="monitor"></div>
+      <div class="prog"><div id="prog-bar"></div></div>
+      <div class="muted" id="prog-text" style="font-size:13px;margin-top:4px"></div>
+
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">日志</h2><span class="en">Log</span></div>
+      <div id="log"><div class="muted em">暂无运行记录</div></div>
+    </div>
+
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">检索目标</h2>
+        <span class="en">Framing</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input class="fld" id="q" placeholder="M / NGC / 名称…" style="flex:1">
+        <button class="cap" id="btn-search">检索</button>
+      </div>
+      <div class="muted em" style="font-size:12px;margin-bottom:8px">点结果即填入下方目标的 RA/Dec</div>
+      <div id="results"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+const FILTERS = ["L","R","G","B","Ha","OIII","SII"];
+const FTYPES  = ["LIGHT","DARK","FLAT","BIAS"];
+
+// ---- 前端内存中的计划对象(编辑器的单一事实来源) -------------------- //
+let plan = defaultPlan();
+let running = false;            // 运行中暂停编辑器重渲染,避免覆盖输入
+let activeTargetIdx = 0;        // "检索"结果填入哪个目标
+
+function defaultPlan(){
+  return {
+    name:"未命名计划", cool_camera_to:-10, warm_at_end:true, park_at_end:true,
+    targets:[ defaultTarget() ],
+    loop_count:1, abort_on_unsafe:false, reject_hfr_over:0,
+    start_at_sun_altitude:null, stop_at_sun_altitude:null,
+  };
+}
+function defaultTarget(){
+  return {
+    name:"目标 1", ra_hours:0, dec_degrees:0, rotation:0,
+    exposures:[ defaultExposure() ],
+    dither_every:1, autofocus_on_temp_delta:1.0,
+    autofocus_on_filter_change:true, meridian_flip:true,
+  };
+}
+function defaultExposure(){
+  return { filter:"L", exposure_s:60, gain:100, offset:50, bin:1, count:10, completed:0, type:"LIGHT" };
+}
+
+// ---- 全局选项渲染 ------------------------------------------------------ //
+function syncGlobals(){
+  document.getElementById("plan-name").value = plan.name || "";
+  const coolOn = plan.cool_camera_to !== null && plan.cool_camera_to !== undefined;
+  setToggle("tg-cool", coolOn);
+  document.getElementById("cool-to").disabled = !coolOn;
+  if(coolOn) document.getElementById("cool-to").value = plan.cool_camera_to;
+  setToggle("tg-warm", plan.warm_at_end);
+  setToggle("tg-park", plan.park_at_end);
+  // 高级触发
+  document.getElementById("loop-count").value = plan.loop_count || 1;
+  const rejOn = (plan.reject_hfr_over || 0) > 0;
+  setToggle("tg-reject", rejOn);
+  document.getElementById("reject-hfr").disabled = !rejOn;
+  if(rejOn) document.getElementById("reject-hfr").value = plan.reject_hfr_over;
+  setToggle("tg-unsafe", plan.abort_on_unsafe);
+  const twOn = plan.start_at_sun_altitude !== null && plan.start_at_sun_altitude !== undefined;
+  setToggle("tg-tw", twOn);
+  document.getElementById("tw-start").disabled = !twOn;
+  document.getElementById("tw-stop").disabled = !twOn;
+  if(twOn){
+    document.getElementById("tw-start").value = plan.start_at_sun_altitude;
+    document.getElementById("tw-stop").value = plan.stop_at_sun_altitude ?? -6;
+  }
+}
+function setToggle(id,on){
+  const b=document.getElementById(id);
+  b.classList.toggle("on",!!on);
+  b.textContent = on ? "已启用" : "已停用";
+}
+
+// ---- 目标 / 曝光行渲染 ------------------------------------------------- //
+function renderTargets(){
+  const host = document.getElementById("targets");
+  host.innerHTML = plan.targets.map((t,ti)=>{
+    const rows = t.exposures.map((e,ei)=>`
+      <tr data-ti="${ti}" data-ei="${ei}">
+        <td><select class="fld" data-f="filter">${FILTERS.map(f=>`<option ${f===e.filter?"selected":""}>${f}</option>`).join("")}</select></td>
+        <td><select class="fld" data-f="type">${FTYPES.map(f=>`<option ${f===e.type?"selected":""}>${f}</option>`).join("")}</select></td>
+        <td><input class="fld" data-f="exposure_s" type="number" step="0.5" value="${e.exposure_s}"></td>
+        <td><input class="fld" data-f="gain" type="number" value="${e.gain}"></td>
+        <td><input class="fld" data-f="offset" type="number" value="${e.offset}"></td>
+        <td><input class="fld" data-f="bin" type="number" min="1" max="4" value="${e.bin}"></td>
+        <td><input class="fld" data-f="count" type="number" min="1" value="${e.count}"></td>
+        <td class="done">${e.completed}/${e.count}</td>
+        <td><button class="x" data-act="del-exp" title="删除该行">×</button></td>
+      </tr>`).join("");
+    return `
+    <div class="tgt" data-ti="${ti}">
+      <div class="tgt-hd">
+        <span class="num">目标 ${roman(ti+1)}</span>
+        <input class="fld name" data-f="name" value="${esc(t.name)}" placeholder="目标名称">
+        <input class="fld" data-f="ra_hours" type="number" step="0.0001" value="${t.ra_hours}" placeholder="RA 时" style="width:110px">
+        <input class="fld" data-f="dec_degrees" type="number" step="0.0001" value="${t.dec_degrees}" placeholder="Dec 度" style="width:110px">
+        <button class="cap" data-act="pick" title="将检索结果填入此目标">用检索</button>
+        <button class="cap danger" data-act="del-target" title="删除整个目标">删目标</button>
+      </div>
+      <span class="muted em" style="font-size:12px">${Ops.fmtRA(t.ra_hours)} ${Ops.fmtDec(t.dec_degrees)}</span>
+      <table class="exp">
+        <thead><tr>
+          <th>滤镜 filter</th><th>类型 type</th><th>曝光 s</th><th>增益 gain</th>
+          <th>偏置 offset</th><th>合并 bin</th><th>张数 count</th><th>已完成 done</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="row-acts" style="margin-top:6px">
+        <button class="cap" data-act="add-exp">＋ 增加曝光行</button>
+      </div>
+      <div class="tgt-opt">
+        <label>每 <input class="fld" data-f="dither_every" type="number" min="0" value="${t.dither_every}"> 张抖动 <em class="em">dither</em></label>
+        <label><button class="cap toggle ${t.autofocus_on_filter_change?"on":""}" data-act="tg-af-filter">${t.autofocus_on_filter_change?"开":"关"}</button> 换滤镜对焦</label>
+        <label>温变 <input class="fld" data-f="autofocus_on_temp_delta" type="number" step="0.1" min="0" value="${t.autofocus_on_temp_delta}">°C 对焦</label>
+        <label><button class="cap toggle ${t.meridian_flip?"on":""}" data-act="tg-flip">${t.meridian_flip?"开":"关"}</button> 子午翻转</label>
+      </div>
+    </div>`;
+  }).join("");
+  bindEditor();
+}
+
+function roman(n){ return ["","Ⅰ","Ⅱ","Ⅲ","Ⅳ","Ⅴ","Ⅵ","Ⅶ","Ⅷ","Ⅸ","Ⅹ"][n] || ("#"+n); }
+function esc(s){ return String(s==null?"":s).replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+
+// ---- 编辑器双向绑定:输入即写回 plan 对象 ------------------------------ //
+function bindEditor(){
+  // 曝光行字段
+  document.querySelectorAll("table.exp [data-f]").forEach(el=>{
+    el.onchange = ()=>{
+      const tr = el.closest("tr"), ti=+tr.dataset.ti, ei=+tr.dataset.ei, f=el.dataset.f;
+      const e = plan.targets[ti].exposures[ei];
+      e[f] = (el.type==="number") ? +el.value : el.value;
+      if(f==="count") tr.querySelector(".done").textContent = `${e.completed}/${e.count}`;
+    };
+  });
+  // 目标级字段
+  document.querySelectorAll(".tgt > .tgt-hd [data-f], .tgt-opt [data-f]").forEach(el=>{
+    el.onchange = ()=>{
+      const ti = +el.closest(".tgt").dataset.ti, f = el.dataset.f;
+      plan.targets[ti][f] = (el.type==="number") ? +el.value : el.value;
+      if(f==="ra_hours"||f==="dec_degrees") renderTargets();
+    };
+  });
+  // 行级 / 目标级动作按钮
+  document.querySelectorAll(".tgt [data-act]").forEach(el=>{
+    el.onclick = ()=>{
+      const ti = +el.closest(".tgt").dataset.ti, act = el.dataset.act;
+      if(act==="add-exp"){ plan.targets[ti].exposures.push(defaultExposure()); renderTargets(); }
+      else if(act==="del-exp"){
+        const ei = +el.closest("tr").dataset.ei;
+        if(plan.targets[ti].exposures.length>1) plan.targets[ti].exposures.splice(ei,1);
+        else Ops.status("warn","每个目标至少保留一行曝光");
+        renderTargets();
+      }
+      else if(act==="del-target"){
+        if(plan.targets.length>1) plan.targets.splice(ti,1);
+        else Ops.status("warn","计划至少保留一个目标");
+        if(activeTargetIdx>=plan.targets.length) activeTargetIdx=plan.targets.length-1;
+        renderTargets();
+      }
+      else if(act==="pick"){ activeTargetIdx = ti; Ops.status("ok",`检索结果将填入「目标 ${roman(ti+1)}」`); }
+      else if(act==="tg-af-filter"){ plan.targets[ti].autofocus_on_filter_change = !plan.targets[ti].autofocus_on_filter_change; renderTargets(); }
+      else if(act==="tg-flip"){ plan.targets[ti].meridian_flip = !plan.targets[ti].meridian_flip; renderTargets(); }
+    };
+  });
+}
+
+// ---- 全局选项交互 ------------------------------------------------------ //
+document.getElementById("plan-name").onchange = e=>{ plan.name = e.target.value || "未命名计划"; };
+document.getElementById("cool-to").onchange = e=>{ if(plan.cool_camera_to!==null) plan.cool_camera_to = +e.target.value; };
+document.getElementById("tg-cool").onclick = ()=>{
+  if(plan.cool_camera_to===null||plan.cool_camera_to===undefined) plan.cool_camera_to = +document.getElementById("cool-to").value || -10;
+  else plan.cool_camera_to = null;
+  syncGlobals();
+};
+document.getElementById("tg-warm").onclick = ()=>{ plan.warm_at_end = !plan.warm_at_end; syncGlobals(); };
+document.getElementById("tg-park").onclick = ()=>{ plan.park_at_end = !plan.park_at_end; syncGlobals(); };
+// 高级触发交互
+document.getElementById("loop-count").onchange = e=>{ plan.loop_count = Math.max(1, +e.target.value||1); };
+document.getElementById("reject-hfr").onchange = e=>{ if((plan.reject_hfr_over||0)>0) plan.reject_hfr_over = +e.target.value; };
+document.getElementById("tg-reject").onclick = ()=>{
+  plan.reject_hfr_over = (plan.reject_hfr_over||0)>0 ? 0 : (+document.getElementById("reject-hfr").value || 3);
+  syncGlobals();
+};
+document.getElementById("tg-unsafe").onclick = ()=>{ plan.abort_on_unsafe = !plan.abort_on_unsafe; syncGlobals(); };
+document.getElementById("tw-start").onchange = e=>{ if(plan.start_at_sun_altitude!==null) plan.start_at_sun_altitude = +e.target.value; };
+document.getElementById("tw-stop").onchange = e=>{ if(plan.start_at_sun_altitude!==null) plan.stop_at_sun_altitude = +e.target.value; };
+document.getElementById("tg-tw").onclick = ()=>{
+  if(plan.start_at_sun_altitude===null||plan.start_at_sun_altitude===undefined){
+    plan.start_at_sun_altitude = +document.getElementById("tw-start").value || -12;
+    plan.stop_at_sun_altitude = +document.getElementById("tw-stop").value || -6;
+  } else { plan.start_at_sun_altitude = null; plan.stop_at_sun_altitude = null; }
+  syncGlobals();
+};
+document.getElementById("btn-add-target").onclick = ()=>{
+  const t = defaultTarget(); t.name = "目标 "+(plan.targets.length+1);
+  plan.targets.push(t); renderTargets();
+};
+
+// ---- 保存计划 ---------------------------------------------------------- //
+document.getElementById("btn-save").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.post("/api/sequence/plan", { plan });
+  if(d && d.ok) Ops.status("ok",`已保存计划「${plan.name}」· ${plan.targets.length} 目标`);
+  else if(d && !d.locked) Ops.status("err", (d&&d.error) || "保存失败");
+};
+
+// ---- 目标检索(填入当前目标的 RA/Dec) -------------------------------- //
+document.getElementById("btn-search").onclick = doSearch;
+document.getElementById("q").addEventListener("keydown", e=>{ if(e.key==="Enter") doSearch(); });
+async function doSearch(){
+  const q = document.getElementById("q").value;
+  const d = await Ops.get(`/api/framing/search?q=${encodeURIComponent(q)}`);
+  document.getElementById("results").innerHTML = (d.targets||[]).map(t=>
+    `<div class="res" data-ra="${t.ra_hours}" data-dec="${t.dec_degrees}" data-name="${esc(t.name)}">`
+    +`<span>${esc(t.name)} <em class="em muted">${esc(t.type)}</em></span>`
+    +`<span class="v cel">${Ops.fmtRA(t.ra_hours)}</span></div>`).join("")
+    || `<div class="muted em">无匹配</div>`;
+  document.querySelectorAll("#results .res").forEach(el=>el.onclick=()=>{
+    const t = plan.targets[activeTargetIdx];
+    if(!t){ Ops.status("warn","请先在某目标上点「用检索」"); return; }
+    t.name = el.dataset.name;
+    t.ra_hours = +(+el.dataset.ra).toFixed(4);
+    t.dec_degrees = +(+el.dataset.dec).toFixed(4);
+    renderTargets();
+    Ops.status("ok",`已将 ${el.dataset.name} 填入「目标 ${roman(activeTargetIdx+1)}」`);
+  });
+}
+
+// ---- 运行控制 ---------------------------------------------------------- //
+function runAction(action, ok, warn){
+  return async ()=>{
+    if(!Ops.requireControl()) return;
+    const d = await Ops.action("sequence", action, {});
+    if(d && d.ok) Ops.status(warn?"warn":"ok", warn||ok);
+  };
+}
+document.getElementById("btn-start").onclick  = runAction("start","序列已开始");
+document.getElementById("btn-pause").onclick  = runAction("pause",null,"序列已暂停");
+document.getElementById("btn-resume").onclick = runAction("resume","序列已继续");
+document.getElementById("btn-stop").onclick   = runAction("stop",null,"序列已停止");
+document.getElementById("btn-reset").onclick  = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("sequence","reset",{});
+  if(d && d.ok){ Ops.status("ok","序列已重置"); refresh(); }
+};
+
+// ---- 运行监视区刷新 ---------------------------------------------------- //
+const STATUS_ZH = {idle:"空闲",running:"运行中",paused:"已暂停",finished:"已完成",error:"错误",waiting:"等待暮光"};
+
+function fmtRemain(s){
+  s = Math.max(0, Math.round(s||0));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+  if(h) return `${h} 时 ${m} 分`;
+  if(m) return `${m} 分 ${ss} 秒`;
+  return `${ss} 秒`;
+}
+
+async function refresh(){
+  let s;
+  try { s = await Ops.get("/api/sequence"); } catch(e){ return; }
+  running = !!s.running;
+
+  // 设备门禁:相机未连接时主区给出提示(序列依赖相机)
+  try {
+    const cam = await Ops.get("/api/camera");
+    document.getElementById("cam-state").textContent = cam.connected ? "" : "相机未连接";
+  } catch(e){}
+
+  // 运行态标识
+  document.getElementById("run-state").textContent = STATUS_ZH[s.status] || s.status;
+
+  // 控件可用性随状态变化
+  setRunButtons(s.status);
+
+  // 监视键值区
+  const ti = s.current_target_index, tname = (ti>=0 && plan.targets[ti]) ? plan.targets[ti].name : "—";
+  document.getElementById("monitor").innerHTML =
+     `<div class="kv"><span class="k">状态 <em>status</em></span><span class="v gold">${STATUS_ZH[s.status]||s.status}</span></div>`
+    +`<div class="kv"><span class="k">当前动作 <em>action</em></span><span class="v">${esc(s.current_action)||"—"}</span></div>`
+    +`<div class="kv"><span class="k">当前目标 <em>target</em></span><span class="v cel">${esc(tname)}</span></div>`
+    +`<div class="kv"><span class="k">已完成 <em>frames</em></span><span class="v gold">${s.completed_frames} / ${s.total_frames}</span></div>`
+    +((plan.loop_count||1)>1?`<div class="kv"><span class="k">轮次 <em>loop</em></span><span class="v">${s.current_loop} / ${plan.loop_count}</span></div>`:"")
+    +(s.rejected_frames?`<div class="kv"><span class="k">废帧 <em>rejected</em></span><span class="v" style="color:var(--err)">${s.rejected_frames}</span></div>`:"")
+    +`<div class="kv"><span class="k">预计剩余 <em>ETA</em></span><span class="v">${s.running?fmtRemain(s.estimated_remaining_s):"—"}</span></div>`;
+
+  // 进度条(仿 overview progressBar)
+  const pct = Math.max(0, Math.min(1, s.progress||0))*100;
+  document.getElementById("prog-bar").style.width = pct+"%";
+  document.getElementById("prog-text").textContent = `进度 ${pct.toFixed(1)}%`;
+
+  // 日志倒序
+  const log = s.log || [];
+  document.getElementById("log").innerHTML = log.length
+    ? log.slice().reverse().map((ln,i)=>
+        `<div class="ln"><span class="seq">${log.length-i}</span><span>${esc(ln)}</span></div>`).join("")
+    : `<div class="muted em">暂无运行记录</div>`;
+
+  // 运行中用后端 plan 同步编辑器的已完成数(不打断未运行时的编辑)
+  if(running && s.plan && s.plan.targets){
+    plan = s.plan;
+    syncGlobals();
+    renderTargets();
+    disableEditor(true);
+  } else if(!running){
+    disableEditor(false);
+  }
+}
+
+function setRunButtons(status){
+  const en = (id,on)=>{ document.getElementById(id).disabled = !on; };
+  en("btn-start",  status==="idle"||status==="finished"||status==="error");
+  en("btn-pause",  status==="running");
+  en("btn-resume", status==="paused");
+  en("btn-stop",   status==="running"||status==="paused");
+  en("btn-reset",  status!=="running");
+}
+
+// 运行时锁住编辑器输入,避免误改
+function disableEditor(lock){
+  document.querySelectorAll("#editor input, #editor select, #editor button").forEach(el=>{
+    if(el.id==="btn-save") return; // 保存键单独由运行态控制
+    el.disabled = lock;
+  });
+  document.getElementById("btn-save").disabled = lock;
+}
+
+// ---- 首屏加载:用后端 plan 预填,空则给默认计划 ----------------------- //
+async function boot(){
+  let s;
+  try { s = await Ops.get("/api/sequence"); } catch(e){ s = null; }
+  if(s && s.plan && s.plan.targets && s.plan.targets.length){
+    plan = s.plan;
+    if(plan.cool_camera_to===undefined) plan.cool_camera_to=null;
+  } else {
+    plan = defaultPlan();
+  }
+  syncGlobals();
+  renderTargets();
+  refresh();
+}
+
+document.addEventListener("ops:ready", boot);
+Ops.onEvent((e)=>{
+  if(e.domain==="sequence") refresh();
+  else if(["SEQUENCE-STARTING","SEQUENCE-FINISHED","ENTITY-FAILED","IMAGE-SAVE"].includes(e.event)) refresh();
+});
+setInterval(()=>{ if(!document.hidden) refresh(); }, 1500);
+</script>
+</body>
+</html>

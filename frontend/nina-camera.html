@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星枢 · 相机</title>
+<style>
+  .cam-grid{display:grid;grid-template-columns:260px 1fr 240px;gap:34px;}
+  .ctl{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
+    border-bottom:1px solid var(--hair-soft);}
+  .ctl label{color:var(--ink-dim);font-size:14px;}
+  .ctl input,.ctl select{width:96px;text-align:right;}
+  #view{width:100%;border:1px solid var(--hair);background:var(--sky-2);min-height:300px;
+    display:block;object-fit:contain;}
+  .prog{height:2px;background:var(--hair);margin-top:10px;}
+  .prog>div{height:2px;width:0;background:var(--gold);transition:width .3s;}
+  #hist{width:100%;height:90px;display:block;}
+  @media(max-width:980px){.cam-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap fade">
+  <div class="cam-grid">
+    <!-- 左:控制 -->
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2 style="font-size:17px">曝光</h2>
+        <span class="en">Exposure</span></div>
+      <div class="ctl"><label>曝光 <em class="em">s</em></label><input class="fld" id="exp" type="number" step="0.5" value="3"></div>
+      <div class="ctl"><label>增益 <em class="em">gain</em></label><input class="fld" id="gain" type="number" value="100"></div>
+      <div class="ctl"><label>偏置 <em class="em">offset</em></label><input class="fld" id="offset" type="number" value="50"></div>
+      <div class="ctl"><label>合并 <em class="em">bin</em></label>
+        <select class="fld" id="bin"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+      <div class="ctl"><label>滤镜 <em class="em">filter</em></label><select class="fld" id="filter"></select></div>
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="cap solid" id="btn-single">单张拍摄</button>
+        <button class="cap" id="btn-loop">循环</button>
+        <button class="cap danger" id="btn-abort">中止</button>
+      </div>
+
+      <div class="sec-h"><span class="rn">Ⅱ</span><h2 style="font-size:17px">制冷</h2>
+        <span class="en">Cooling</span></div>
+      <div class="ctl"><label>目标 <em class="em">°C</em></label><input class="fld" id="ttemp" type="number" value="-10"></div>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="cap" id="btn-cool">制冷</button>
+        <button class="cap" id="btn-warm">回温</button>
+      </div>
+      <div id="cool-stat" class="muted" style="margin-top:12px;font-size:13px"></div>
+    </div>
+
+    <!-- 中:预览 -->
+    <div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅲ</span><h2 style="font-size:17px">预览</h2>
+        <span class="en">Preview</span><span id="cap-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <img id="view" alt="预览">
+      <div class="prog"><div id="prog-bar"></div></div>
+      <button class="cap" id="btn-solve" style="margin-top:14px">板解算 · Plate Solve</button>
+    </div>
+
+    <!-- 右:传感器 + 直方图 -->
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">直方图</h2></div>
+      <canvas id="hist" width="240" height="90"></canvas>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
+      <div id="sensor"></div>
+    </aside>
+  </div>
+</main>
+
+<script src="/nina-theme.js"></script>
+<script>
+let lastImageId = null, filtersLoaded = false;
+
+async function loadFilters(){
+  const fw = await Ops.get("/api/filterwheel");
+  const sel = document.getElementById("filter");
+  if(fw.connected && fw.filters.length){
+    sel.innerHTML = fw.filters.map(f=>`<option value="${f.position}">${f.name}</option>`).join("");
+    sel.disabled = false;
+  } else { sel.innerHTML = `<option>—</option>`; sel.disabled = true; }
+  filtersLoaded = true;
+}
+
+async function refresh(){
+  const c = await Ops.get("/api/camera");
+  document.getElementById("cap-state").textContent =
+    ({idle:"空闲",exposing:"曝光中",downloading:"下载中",error:"错误"})[c.state]||c.state;
+  document.getElementById("prog-bar").style.width = (c.progress*100||0)+"%";
+  document.getElementById("cool-stat").innerHTML = c.has_cooler
+    ? `当前 <span class="v gold">${c.temperature.toFixed(1)}°C</span> · `
+      +`功率 ${c.cooler_power.toFixed(0)}% · ${c.cooler_on?'制冷开':'制冷关'}` : "无制冷";
+  document.getElementById("sensor").innerHTML = c.connected ?
+     `<div class="kv"><span class="k">型号</span><span class="v">${c.sensor_name||c.name}</span></div>`
+    +`<div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v">${c.chip_width}×${c.chip_height}</span></div>`
+    +`<div class="kv"><span class="k">像元 <em>µm</em></span><span class="v">${c.pixel_size_um}</span></div>`
+    +`<div class="kv"><span class="k">位深</span><span class="v">${c.bit_depth}-bit</span></div>`
+    : `<div class="muted em">相机未连接 —— 请到「设备」页连接</div>`;
+}
+
+async function refreshImage(){
+  const r = await Ops.get("/api/camera/current-image");
+  if(!r.image) return;
+  if(r.image.image_id !== lastImageId){
+    lastImageId = r.image.image_id;
+    document.getElementById("view").src = `/api/camera/image?image_id=${lastImageId}&t=${Date.now()}`;
+    drawHist(r.image.histogram||[]);
+    Ops.status("ok", `新影像 #${lastImageId} · ${r.image.filter} ${r.image.exposure_s}s · HFR ${r.image.hfr} · ${r.image.stars} 星`);
+  }
+}
+
+function drawHist(h){
+  const cv = document.getElementById("hist"), ctx = cv.getContext("2d");
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(!h.length) return;
+  const max = Math.max(...h)||1, w = cv.width/h.length;
+  ctx.fillStyle = "#c9a227";
+  h.forEach((v,i)=>{ const bh=(v/max)*cv.height; ctx.fillRect(i*w, cv.height-bh, Math.max(1,w-0.5), bh); });
+}
+
+function ctlVal(id){ return document.getElementById(id).value; }
+
+document.getElementById("btn-single").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  await pushControls();
+  const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"single"});
+  if(d.ok) Ops.status("ok","开始单张曝光");
+};
+document.getElementById("btn-loop").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  await pushControls();
+  const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"loop"});
+  if(d.ok) Ops.status("ok","开始循环拍摄");
+};
+document.getElementById("btn-abort").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("camera","abort",{}); if(d.ok) Ops.status("warn","已中止曝光");
+};
+document.getElementById("btn-cool").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("camera","cool",{temperature:+ctlVal("ttemp")}); if(d.ok) Ops.status("ok","开始制冷至 "+ctlVal("ttemp")+"°C");
+};
+document.getElementById("btn-warm").onclick = async ()=>{
+  if(!Ops.requireControl()) return;
+  const d = await Ops.action("camera","warm",{}); if(d.ok) Ops.status("ok","开始回温");
+};
+document.getElementById("btn-solve").onclick = async ()=>{
+  Ops.status("ok","板解算中…");
+  const d = await Ops.post("/api/camera/platesolve", {});
+  if(d && d.solved) Ops.status("ok",`板解算成功 · RA ${d.ra_text} · Dec ${d.dec_text} · 旋转 ${d.rotation}°`);
+  else Ops.status("err",(d&&d.error)||"板解算失败");
+};
+
+async function pushControls(){
+  await Ops.action("camera","set_control",{name:"Gain",value:+ctlVal("gain")});
+  await Ops.action("camera","set_control",{name:"Offset",value:+ctlVal("offset")});
+  if(!document.getElementById("filter").disabled)
+    await Ops.action("filterwheel","change",{position:+ctlVal("filter")});
+}
+
+document.addEventListener("ops:ready", ()=>{ loadFilters(); refresh(); refreshImage(); });
+Ops.onEvent((e)=>{ if(e.event==="IMAGE-SAVE") refreshImage(); if(e.domain==="camera") refresh(); });
+setInterval(()=>{ if(!document.hidden){ refresh(); refreshImage(); if(!filtersLoaded) loadFilters(); } }, 2000);
+</script>
+</body>
+</html>
