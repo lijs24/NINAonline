@@ -123,7 +123,7 @@ async function refresh(){
 // ── 实时拍摄状态机 ──────────────────────────────────────────────
 // 后端拍摄是异步的、出图可能慢;前端据"点击→曝光时长→出图"自驱一个倒计时,
 // 让用户始终看到"曝光中 剩 X.Xs / 下载处理中 / 完成",而不是过早定格"空闲"。
-let cap = null, capTimer = null, starting = false, _frame = 0, captureGen = 0;
+let cap = null, capTimer = null, starting = false, _frame = 0, captureGen = 0, abortRequested = false;
 let procEst = 12;   // 下载+处理耗时估计(秒);NINA 不报真实进度,故用上一张实测值自校准
 function setProg(p){ document.getElementById("prog-bar").style.width = Math.max(0,Math.min(100,p))+"%"; }
 function setCap(s){ setT("cap-state", s); }
@@ -146,7 +146,7 @@ async function triggerCapture(mode){
     await pushControls();
     const exp = +ctlVal("exp");
     const d = await Ops.action("camera","capture",{exposure:exp,gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode});
-    if(myGen !== captureGen){                       // 启动期间被中止 → 撤销后端已开的拍摄
+    if(myGen !== captureGen || abortRequested){     // 启动期间被中止 → 撤销后端已开的拍摄
       if(d && d.ok) Ops.action("camera","abort",{});
       return;
     }
@@ -186,26 +186,29 @@ function tickCapture(){
   }
   // 下载/处理段:独立 0→100%(NINA 无真实进度,按 procEst 渐近、封顶 ~97%,出图补满)
   const ps = (Date.now()-cap.procT0)/1000;
-  if(ps > Math.max(45, procEst*4)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("空闲"); return; }
+  if(ps > Math.max(60, procEst*4)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("超时结束"); return; }
   setProg(97 * (1 - Math.exp(-2.3*ps/Math.max(1,procEst))));   // 0→~97%(到估计点 ≈90%)
   setCap("下载 / 处理中…");
   setDetail(`第 ${cap.frame} 张 · 下载与处理影像… ${ps.toFixed(0)}s / 约 ${procEst.toFixed(0)}s`);
 }
 function stopCapture(label){
-  clearInterval(capTimer); capTimer = null; cap = null; starting = false; captureGen++;
+  clearInterval(capTimer); capTimer = null; cap = null; starting = false; captureGen++; abortRequested = false;
   setProg(0); setCap(label||"空闲"); lockShoot(false);
 }
 function onImageArrived(meta){
   if(!cap) return;                                   // 非本前端发起的拍摄,交给轮询显示
+  if(cap.phase !== "processing") return;             // 仍在曝光中 → 到达的是上一张图(本次尚未拍完),
+                                                     // 忽略其"完成"语义,避免进度条提前跳到完成。预览图照常由 refreshImage 更新
   if(cap.procT0){                                     // 用实测下载处理耗时平滑校准估计值
     const measured = (Date.now()-cap.procT0)/1000;
     procEst = Math.max(2, procEst*0.4 + measured*0.6);
   }
   setProg(100);
   setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星 · 用时 ${((Date.now()-cap.t0)/1000).toFixed(0)}s`);
-  const loop = cap.mode==="loop" && !cap.aborting;
+  const loop = cap.mode==="loop" && !cap.aborting && !abortRequested;
   clearInterval(capTimer); capTimer = null; cap = null;        // 先清,否则连点守卫会挡住循环续拍
   if(loop){ triggerCapture("loop"); return; }                  // 循环:前端驱动下一张
+  abortRequested = false;
   setCap("空闲"); lockShoot(false);                            // 单张:解锁拍摄按钮
   setTimeout(()=>{ if(!cap && !starting) setProg(0); }, 600);  // 100% 闪现后清零
 }
@@ -242,13 +245,14 @@ function drawHist(h){
 
 function ctlVal(id){ return document.getElementById(id).value; }
 
-document.getElementById("btn-single").onclick = ()=>triggerCapture("single");
-document.getElementById("btn-loop").onclick = ()=>triggerCapture("loop");
+document.getElementById("btn-single").onclick = ()=>{ abortRequested=false; triggerCapture("single"); };
+document.getElementById("btn-loop").onclick = ()=>{ abortRequested=false; triggerCapture("loop"); };
 document.getElementById("btn-abort").onclick = async ()=>{
   if(!Ops.requireControl("camera")) return;
+  abortRequested = true;                  // 全局中止:即使此刻 cap 尚未建立(启动/续拍 await 窗口)也生效
   if(cap) cap.aborting = true;
   const d = await Ops.action("camera","abort",{});
-  stopCapture("已中止");
+  stopCapture("已中止");                   // 注:stopCapture 会复位 abortRequested=false
   if(d.ok) Ops.status("warn","已中止曝光");
 };
 document.getElementById("btn-cool").onclick = async ()=>{
