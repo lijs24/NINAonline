@@ -144,14 +144,19 @@ function frameMB(bin){
   return (Math.floor(w/bin) * Math.floor(h/bin) * bpp) / 1e6;
 }
 
-async function loadFilters(){
+// 与滤镜轮双向同步:① 重建选项(仅当变化);② 把下拉值同步到当前实际滤镜位
+//(用户未在操作下拉、且滤镜轮未转动时)→ 滤镜页切了相机下拉也跟着变。
+async function syncFilters(){
   const fw = await Ops.get("/api/filterwheel");
   const sel = document.getElementById("filter");
-  if(fw.connected && fw.filters.length){
-    sel.innerHTML = fw.filters.map(f=>`<option value="${f.position}">${f.name}</option>`).join("");
-    sel.disabled = false;
-  } else { sel.innerHTML = `<option>—</option>`; sel.disabled = true; }
+  if(!(fw.connected && fw.filters && fw.filters.length)){
+    if(!filtersLoaded){ sel.innerHTML = `<option>—</option>`; sel.disabled = true; }
+    return;
+  }
+  const sig = fw.filters.map(f=>f.position+":"+f.name).join("|");
+  if(sel._sig !== sig){ sel.innerHTML = fw.filters.map(f=>`<option value="${f.position}">${f.name}</option>`).join(""); sel._sig = sig; sel.disabled = false; }
   filtersLoaded = true;
+  if(document.activeElement !== sel && !fw.is_moving && +sel.value !== fw.position) sel.value = String(fw.position);
 }
 
 async function refresh(){
@@ -507,14 +512,23 @@ async function pushControls(){
   }
 }
 
-document.addEventListener("ops:ready", ()=>{ loadFilters(); refresh(); refreshImage(); });
+// 在相机页改滤镜下拉 → 立刻转动滤镜轮(需主控);无主控则还原下拉到实际位
+document.getElementById("filter").addEventListener("change", async (e)=>{
+  const target = +e.target.value;
+  if(!Ops.requireControl("filterwheel")){ syncFilters(); return; }
+  const d = await Ops.action("filterwheel","change",{position:target});
+  if(d && d.ok) Ops.status("ok","切换滤镜中…"); else syncFilters();
+});
+
+document.addEventListener("ops:ready", ()=>{ syncFilters(); refresh(); refreshImage(); });
 // 拍完刷新预览:保存触发 IMAGE-SAVE,快照触发 IMAGE-PREPARED / API-CAPTURE-FINISHED;轮询兜底
 Ops.onEvent((e)=>{
   const ev = e.event || "";
   if(/IMAGE-SAVE|IMAGE-PREPARED|CAPTURE-FINISHED/.test(ev)) refreshImage();
   if(e.domain==="camera") refresh();
+  if(e.domain==="filterwheel" || /FILTERWHEEL/.test(ev)) syncFilters();   // 滤镜轮变 → 同步下拉
 });
-setInterval(()=>{ if(!document.hidden){ refresh(); refreshImage(); if(!filtersLoaded) loadFilters(); } }, 2000);
+setInterval(()=>{ if(!document.hidden){ refresh(); refreshImage(); syncFilters(); } }, 2000);
 </script>
 </body>
 </html>
