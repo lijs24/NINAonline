@@ -97,6 +97,11 @@ class NinaGateway(abc.ABC):
     async def get_image_png(self, image_id: int | None = None,
                             stretch: bool = True) -> bytes | None: ...
 
+    async def get_guider_star_image(self) -> dict[str, Any]:
+        """导星星点画面(PHD2 get_star_image)。默认 Provider 不支持。
+        返回 {available, frame, width, height, star:[x,y], image:dataURL} 或 {available:False}。"""
+        return {"available": False, "reason": "该 Provider 未实现导星画面"}
+
     # -- 辅助设备动作 / 板解算 / 天文台条件(默认未实现, Sim 覆盖) -------- #
     async def dome_action(self, action: str, params: dict) -> dict[str, Any]:
         return {"ok": False, "error": "该 Provider 未实现圆顶动作"}

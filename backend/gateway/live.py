@@ -289,8 +289,39 @@ class LiveGateway(NinaGateway):
             mo.lst_text = info.get("SiderealTimeString") or astro.hours_to_hms(mo.lst_hours)
         return mo
 
+    async def _slew_safety(self, ra, dec) -> dict | None:
+        """转向护栏(防打腿):slew/goto 前校验目标安全。返回 None=放行,否则返回拒绝响应。
+        规则(均 env 可调,见 config):
+          1) 目标地平高度 < mount_min_alt_deg → 拒绝(防低空撞腿/朝地)。
+          2) mount_meridian_limit_deg>0 时,目标在当前墩侧越过中天进入配重上扬区超过该角度 → 拒绝。
+        读不到赤道仪状态一律拒绝(fail-safe)。park/home/stop/tracking/sync/flip 不经此校验。"""
+        if ra is None or dec is None:
+            return {"ok": False, "blocked": True, "error": "护栏:slew 缺少 ra/dec,已拒绝"}
+        info = await self._get("/equipment/mount/info")
+        if not isinstance(info, dict) or info.get("_error") or not info.get("Connected"):
+            return {"ok": False, "blocked": True, "error": "护栏:读不到赤道仪状态,安全起见拒绝转向"}
+        lat, lst = _f(info.get("SiteLatitude")), _f(info.get("SiderealTime"))
+        ra, dec = _f(ra), _f(dec)
+        ha_deg = (((lst - ra + 12) % 24) - 12) * 15.0      # >0=已过中天(西), <0=未过(东)
+        ha, latr, decr = math.radians(ha_deg), math.radians(lat), math.radians(dec)
+        sin_alt = math.sin(decr) * math.sin(latr) + math.cos(decr) * math.cos(latr) * math.cos(ha)
+        alt = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+        if alt < self.s.mount_min_alt_deg:
+            return {"ok": False, "blocked": True,
+                    "error": f"护栏拦截:目标高度 {alt:.1f}° 低于安全下限 {self.s.mount_min_alt_deg:.0f}°,拒绝转向(防打腿)"}
+        lim = self.s.mount_meridian_limit_deg
+        if lim and lim > 0:
+            side = str(info.get("SideOfPier", "")).lower().replace("pier", "")
+            if (side == "west" and ha_deg > lim) or (side == "east" and ha_deg < -lim):
+                return {"ok": False, "blocked": True,
+                        "error": f"护栏拦截:目标过中天 {ha_deg:+.1f}°(墩侧={side or '未知'},限位 {lim:.0f}°),"
+                                 f"配重上扬/打腿风险 —— 拒绝转向,请先在 NINA 翻转或确认安全"}
+        return None
+
     async def mount_action(self, action: str, p: dict) -> dict:
         if action == "slew":
+            if (err := await self._slew_safety(p.get("ra"), p.get("dec"))) is not None:
+                return err
             return _ok(await self._get("/equipment/mount/slew",
                                        ra=p.get("ra"), dec=p.get("dec")))
         if action == "park":
@@ -415,6 +446,83 @@ class LiveGateway(NinaGateway):
             return {"ok": False,
                     "error": "NINA 接口不支持独立抖动/自动选星(抖动随序列自动进行,选星在 PHD2 内做)"}
         return {"ok": False, "error": f"live 未映射导星动作 {action}"}
+
+    # -- 导星画面:直连 PHD2 事件服务器(TCP),行分隔 JSON-RPC ------------- #
+    async def _phd2_rpc(self, method: str, params=None, timeout: float = 3.0) -> dict | None:
+        """与 PHD2 跑一次请求/响应。连接后 PHD2 会先推一串事件行(Version/AppState…),
+        我们发出请求后逐行读、跳过事件行,直到读到 id 匹配的响应。短连接、即用即关:
+        PHD2 支持多客户端并存(NINA 也连着),不影响导星。"""
+        import uuid
+        host, port = self.s.phd2_host, self.s.phd2_port
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=timeout)
+        except (OSError, asyncio.TimeoutError):
+            return None        # PHD2 不可达 / 服务器未开
+        rid = uuid.uuid4().hex
+        req = {"method": method, "id": rid}
+        if params is not None:
+            req["params"] = params
+        try:
+            writer.write((json.dumps(req) + "\r\n").encode("utf-8"))
+            await writer.drain()
+
+            async def _read_until():
+                while True:
+                    line = await reader.readline()
+                    if not line:
+                        return None        # 对端关闭
+                    line = line.strip()
+                    if not line.startswith(b"{"):
+                        continue
+                    try:
+                        o = json.loads(line)
+                    except ValueError:
+                        continue
+                    if o.get("Event") is not None:
+                        continue           # 事件行,跳过
+                    if str(o.get("id")) == rid:
+                        return o
+
+            return await asyncio.wait_for(_read_until(), timeout=timeout)
+        except (OSError, asyncio.TimeoutError):
+            return None
+        finally:
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+
+    async def get_guider_star_image(self) -> dict:
+        import base64
+        import numpy as np
+        from gateway.sim import imaging
+
+        resp = await self._phd2_rpc("get_star_image", params=[self.s.phd2_star_size])
+        if resp is None:
+            return {"available": False, "reason": "PHD2 不可达(服务器未开或未连接)"}
+        if "result" not in resp:
+            # 多半是"未选星":PHD2 在未导星/未锁定星点时对 get_star_image 返回 error
+            err = (resp.get("error") or {}).get("message") if isinstance(resp.get("error"), dict) else None
+            return {"available": False, "reason": err or "PHD2 当前未跟踪星点"}
+        r = resp["result"]
+        try:
+            w, h = int(r["width"]), int(r["height"])
+            raw = base64.b64decode(r["pixels"])
+            arr = np.frombuffer(raw, dtype="<u2")[:w * h].reshape(h, w)
+            png = imaging.stretch_guide_png(arr)
+            sp = r.get("star_pos")
+            if not (isinstance(sp, (list, tuple)) and len(sp) >= 2):
+                sp = [w / 2.0, h / 2.0]      # 畸形/缺失 → 居中
+            star = [float(sp[0]), float(sp[1])]
+        except (KeyError, ValueError, TypeError, IndexError):
+            return {"available": False, "reason": "PHD2 画面数据无法解析"}
+        return {
+            "available": True,
+            "frame": r.get("frame"),
+            "width": w, "height": h,
+            "star": star,
+            "image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+        }
 
     # -- 其余设备:尽力读 info,动作多数未在 NINA API 暴露 ----------------- #
     async def _simple_info(self, dev: str) -> dict:

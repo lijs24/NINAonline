@@ -117,6 +117,46 @@ def stretch_to_png(arr: np.ndarray, low_pct: float = 0.5,
     return buf.getvalue()
 
 
+def stretch_guide_png(arr: np.ndarray) -> bytes:
+    """导星星点裁切的拉伸:背景为中位、白点取峰值,强 gamma 提暗部,
+    让星点轮廓与暗弱背景星都清晰可辨(PHD2 星点画面通常是线性 16-bit)。"""
+    a = arr.astype(np.float32)
+    lo = float(np.percentile(a, 30))      # 背景基底
+    hi = float(a.max())
+    if hi <= lo:
+        hi = lo + 1
+    n = np.clip((a - lo) / (hi - lo), 0, 1)
+    n = np.power(n, 0.45)
+    img8 = (n * 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(img8, mode="L").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def render_guide_star(size: int, seed: int, hfd: float = 2.6,
+                      snr: float = 40.0, drift: float = 0.0) -> tuple[np.ndarray, float, float]:
+    """SIM:合成一帧导星星点裁切 —— 中央高斯星 + 背景噪声 + 几颗暗弱伴星。
+    返回 (uint16 图, star_x, star_y)。"""
+    rng = np.random.default_rng(seed)
+    size = max(15, int(size))
+    sky = 1200.0
+    img = np.full((size, size), sky, dtype=np.float32)
+    img += rng.normal(0, 60, (size, size))
+    yy, xx = np.mgrid[0:size, 0:size]
+    # 主星:抖动让它随时间轻微漂移
+    cx = size / 2 + drift * 0.6
+    cy = size / 2 - drift * 0.4
+    sigma = max(0.8, hfd / 2.0)
+    peak = 1500.0 + snr * 900.0
+    img += peak * np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * sigma * sigma))
+    # 几颗暗弱伴星
+    for _ in range(rng.integers(2, 5)):
+        bx, by = rng.uniform(2, size - 2, 2)
+        img += rng.uniform(400, 1400) * np.exp(-((xx - bx) ** 2 + (yy - by) ** 2) / (2 * 1.1 ** 2))
+    img = np.clip(img, 0, 65535).astype(np.uint16)
+    return img, float(cx), float(cy)
+
+
 def thumbnail_png(arr: np.ndarray, width: int = 240) -> bytes:
     lo, hi = np.percentile(arr, 0.5), np.percentile(arr, 99.7)
     if hi <= lo:

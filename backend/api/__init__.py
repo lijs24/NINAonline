@@ -251,6 +251,12 @@ async def guider_graph(request: Request):
     return {"ok": True, "steps": [s.model_dump() for s in steps]}
 
 
+@router.get("/guider/star-image")
+async def guider_star_image(request: Request):
+    """导星星点画面(PHD2 get_star_image)。只读监控,无需控制权。"""
+    return await _gw(request).get_guider_star_image()
+
+
 # --------------------------------------------------------------------------- #
 # 序列
 # --------------------------------------------------------------------------- #

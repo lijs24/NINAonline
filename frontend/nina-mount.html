@@ -7,71 +7,145 @@
 <link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 赤道仪</title>
 <style>
-  .pad{display:grid;grid-template-columns:repeat(3,52px);gap:8px;justify-content:center;margin:8px 0;}
-  .pad button{height:46px;}
+  /* ── 定高一屏布局:左天图(主) + 右控制栏,整页不滚动 ── */
+  .mount-fit{max-width:none;margin:0;padding:14px 22px;
+    height:calc(100vh - 52px - 34px);
+    display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;overflow:hidden;}
+  @media(max-width:900px){
+    .mount-fit{height:auto;overflow:visible;grid-template-columns:1fr;}
+  }
+  .chart-pane{display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .chart-head{display:flex;align-items:baseline;gap:12px;flex:0 0 auto;
+    border-bottom:1px solid var(--hair);padding-bottom:8px;margin-bottom:10px;}
+  .chart-head .rn{color:var(--gold);font-size:15px;}
+  .chart-head h2{font-size:19px;margin:0;font-weight:400;}
+  .chart-head .en{font-style:italic;color:var(--ink-dim);font-size:12px;}
+  .chart-head .sky-tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+
+  /* 控制栏:右侧发丝金边,内部可在极窄屏滚动(常规屏一屏装下) */
+  .ctrl-pane{display:flex;flex-direction:column;min-height:0;overflow:auto;
+    border-left:1px solid var(--gold);padding-left:22px;}
+  .ctrl-pane .sec-h{margin:0 0 7px;padding-bottom:6px;}
+  .ctrl-pane .sec-h:not(:first-child){margin-top:13px;}
+  .ctrl-pane .sec-h h2{font-size:16px;}
+  .ctrl-pane .kv{padding:4px 0;}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;}
+  #results{max-height:120px;overflow:auto;margin-top:6px;}
+
+  /* 天图框:占满左侧剩余高度 */
+  .skybox{position:relative;flex:1 1 auto;min-height:0;border:1px solid var(--hair);
+    background:radial-gradient(ellipse 120% 95% at 50% 14%,#0c1322 0%,#080b16 70%,#06080f 100%);
+    overflow:hidden;}
+  #skychart{position:absolute;inset:0;width:100%;height:100%;cursor:grab;touch-action:none;display:block;}
+  #skychart.dragging{cursor:grabbing;}
+
+  /* 叠在天图上的遥测层(左上),不挡拖拽 */
+  .tele{position:absolute;top:14px;left:16px;z-index:4;pointer-events:none;
+    padding:4px 22px 10px 4px;}
+  .tele .big{display:flex;gap:30px;}
+  .tele .big .col .lab{font-style:italic;font-size:11px;color:var(--ink-dim);letter-spacing:.5px;}
+  .tele .big .col .val{font-size:27px;line-height:1.15;color:var(--celestial);
+    font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(8,11,20,.9);}
+  .tele .sub{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px;
+    font-size:12.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums;}
+  .tele .sub b{color:var(--ink);font-weight:400;} .tele .sub .g{color:var(--gold);}
+
+  .sky-tip{position:absolute;pointer-events:none;display:none;z-index:6;white-space:nowrap;
+    font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--gold);
+    background:rgba(8,11,20,.82);padding:1px 7px;}
+  .sky-foot{position:absolute;left:0;right:0;bottom:0;z-index:5;pointer-events:none;
+    display:flex;align-items:center;gap:10px;padding:6px 12px;font-size:12px;
+    color:var(--ink-dim);font-variant-numeric:tabular-nums;
+    background:linear-gradient(0deg,rgba(8,11,20,.9),rgba(8,11,20,0));}
+  .sky-foot .hint{margin-left:auto;}
+
+  .cap.chip{padding:3px 11px;font-size:12.5px;}
+  .cap.chip.on{border-color:var(--gold);color:var(--gold);}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:4px 0 0;}
+  .pad button{height:38px;}
   .pad .mid{display:flex;align-items:center;justify-content:center;color:var(--ink-dim);font-size:12px;}
   .res{padding:6px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
     gap:12px;cursor:pointer;}
   .res:hover{color:var(--gold);}
+
+  /* 天图叠层星图册配色 */
+  :root{
+    --sky-grid-eq:rgba(201,162,39,.42); --sky-grid-alt:rgba(157,180,208,.20);
+    --sky-star:#e9e2d0; --sky-horizon:rgba(201,162,39,.55); --sky-ground:rgba(4,7,14,.94);
+    --sky-scope:#c9a227; --sky-target:#9db4d0;
+  }
 </style>
 </head>
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap view-pending">
-  <div class="col-rail">
-    <div>
-      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>指向</h2>
-        <span class="en">Pointing</span><span id="m-state" class="muted" style="margin-left:auto;font-size:13px">检测中…</span></div>
-      <div id="pos">
-        <div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel" id="m-ra">--</span></div>
-        <div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel" id="m-dec">--</span></div>
-        <div class="kv"><span class="k">高度 <em>Alt</em></span><span class="v" id="m-alt">--</span></div>
-        <div class="kv"><span class="k">方位 <em>Az</em></span><span class="v" id="m-az">--</span></div>
-        <div class="kv"><span class="k">恒星时 <em>LST</em></span><span class="v" id="m-lst">--</span></div>
-        <div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold" id="m-target">—</span></div>
+<main class="wrap mount-fit view-pending">
+  <!-- ───────── 左:天图主视图 ───────── -->
+  <section class="chart-pane">
+    <div class="chart-head"><span class="rn">✦</span><h2>天图</h2><span class="en">Sky Chart</span>
+      <span class="sky-tools">
+        <button class="cap chip on" id="tg-eq"  type="button">赤道网格</button>
+        <button class="cap chip on" id="tg-alt" type="button">地平网格</button>
+        <button class="cap chip on" id="tg-gnd" type="button">地面</button>
+      </span></div>
+    <div class="skybox">
+      <canvas id="skychart"></canvas>
+      <div class="tele">
+        <div class="big">
+          <div class="col"><div class="lab">赤经 RA</div><div class="val" id="m-ra">--</div></div>
+          <div class="col"><div class="lab">赤纬 Dec</div><div class="val" id="m-dec">--</div></div>
+        </div>
+        <div class="sub">
+          <span>高度 <b id="m-alt">--</b></span><span>方位 <b id="m-az">--</b></span>
+          <span>LST <b id="m-lst">--</b></span><span>目标 <b class="g" id="m-target">—</b></span>
+        </div>
       </div>
-      <div id="pos-notice" class="muted em" style="font-size:13px;margin-top:6px;display:none">
-        赤道仪未连接 —— 请到「设备」页连接</div>
-
-      <div class="sec-h"><span class="rn">Ⅱ</span><h2>目标 · 转向</h2><span class="en">GoTo</span></div>
-      <div style="display:flex;gap:10px;margin-bottom:8px">
-        <input class="fld" id="q" placeholder="检索 M / NGC / IC / 名称…" style="flex:1">
-        <button class="cap" id="btn-search">检索</button>
-      </div>
-      <div id="results"></div>
-      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
-        <input class="fld" id="ra" placeholder="RA 小时" style="width:120px">
-        <input class="fld" id="dec" placeholder="Dec 度" style="width:120px">
-        <button class="cap solid" id="btn-goto">转向 GoTo</button>
-        <button class="cap danger" id="btn-stop">停止</button>
-      </div>
-
-      <div class="sec-h"><span class="rn">Ⅲ</span><h2>手动微动</h2><span class="en">Manual</span></div>
-      <div class="pad">
-        <div></div><button class="cap" data-dir="n">北 N</button><div></div>
-        <button class="cap" data-dir="w">西 W</button><div class="mid">微动</div><button class="cap" data-dir="e">东 E</button>
-        <div></div><button class="cap" data-dir="s">南 S</button><div></div>
+      <div id="sky-tip" class="sky-tip"></div>
+      <div class="sky-foot">
+        <span class="hint">拖拽转视角 · 滚轮缩放 · 悬停读坐标 · 只读</span>
       </div>
     </div>
+  </section>
 
-    <aside class="rail">
-      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">控制</h2></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="cap" id="btn-track">跟踪</button>
-        <button class="cap" id="btn-park">停靠</button>
-        <button class="cap" id="btn-unpark">解锁</button>
-        <button class="cap" id="btn-home">归位</button>
-        <button class="cap" id="btn-flip">子午翻转</button>
-      </div>
-      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">天象</h2></div>
-      <div id="sky">
-        <div class="kv"><span class="k">中天 <em>meridian</em></span><span class="v" id="m-meridian">--</span></div>
-        <div class="kv"><span class="k">天球侧 <em>pier</em></span><span class="v" id="m-pier">--</span></div>
-        <div class="kv"><span class="k">跟踪模式</span><span class="v" id="m-trackmode">--</span></div>
-      </div>
-    </aside>
-  </div>
+  <!-- ───────── 右:控制栏(状态 / 控制 / GoTo / 微动) ───────── -->
+  <aside class="ctrl-pane">
+    <div class="sec-h"><span class="rn">Ⅰ</span><h2>状态</h2><span class="en">Status</span>
+      <span id="m-state" class="muted" style="margin-left:auto;font-size:13px">检测中…</span></div>
+    <div class="kv"><span class="k">中天 <em>meridian</em></span><span class="v" id="m-meridian">--</span></div>
+    <div class="kv"><span class="k">天球侧 <em>pier</em></span><span class="v" id="m-pier">--</span></div>
+    <div class="kv"><span class="k">跟踪模式 <em>mode</em></span><span class="v" id="m-trackmode">--</span></div>
+    <div id="pos-notice" class="muted em" style="font-size:13px;margin-top:6px;display:none">
+      赤道仪未连接 —— 请到「设备」页连接</div>
+
+    <div class="sec-h"><span class="rn">Ⅱ</span><h2>控制</h2><span class="en">Control</span></div>
+    <div class="btnrow">
+      <button class="cap" id="btn-track">跟踪</button>
+      <button class="cap" id="btn-park">停靠</button>
+      <button class="cap" id="btn-unpark">解锁</button>
+      <button class="cap" id="btn-home">归位</button>
+      <button class="cap" id="btn-flip">子午翻转</button>
+    </div>
+
+    <div class="sec-h"><span class="rn">Ⅲ</span><h2>目标 · 转向</h2><span class="en">GoTo</span></div>
+    <div style="display:flex;gap:8px">
+      <input class="fld" id="q" placeholder="检索 M / NGC / IC / 名称…" style="flex:1;min-width:0">
+      <button class="cap" id="btn-search">检索</button>
+    </div>
+    <div id="results"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <input class="fld" id="ra" placeholder="RA 小时" style="width:108px">
+      <input class="fld" id="dec" placeholder="Dec 度" style="width:108px">
+      <button class="cap solid" id="btn-goto">转向</button>
+      <button class="cap danger" id="btn-stop">停止</button>
+    </div>
+
+    <div class="sec-h"><span class="rn">Ⅳ</span><h2>手动微动</h2><span class="en">Manual</span></div>
+    <div class="pad">
+      <div></div><button class="cap" data-dir="n">北 N</button><div></div>
+      <button class="cap" data-dir="w">西 W</button><div class="mid">微动</div><button class="cap" data-dir="e">东 E</button>
+      <div></div><button class="cap" data-dir="s">南 S</button><div></div>
+    </div>
+  </aside>
 </main>
 
 <script src="/nina-theme.js"></script>
@@ -80,6 +154,7 @@
 function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 async function refresh(){
   const m = await Ops.get("/api/mount");
+  if (window.SkyChart) SkyChart.update(m);   // 喂天图
   setT("m-state", !m.connected ? "未连接"
     : (m.slewing ? "转向中" : (m.tracking ? "跟踪中" : "静止")) + (m.at_park ? " · 已停靠" : ""));
   document.getElementById("pos-notice").style.display = m.connected ? "none" : "block";
@@ -122,7 +197,7 @@ document.getElementById("btn-goto").onclick = async ()=>{
   const ra=+document.getElementById("ra").value, dec=+document.getElementById("dec").value;
   if(isNaN(ra)||isNaN(dec)){ Ops.status("err","请先填写或检索目标坐标"); return; }
   const d = await Ops.action("mount","slew",{ra,dec,target_name:document.getElementById("ra").dataset.name||"手动目标"});
-  if(d.ok) Ops.status("ok","开始转向");
+  if(d.ok) Ops.status("ok","开始转向"); else if(d.error) Ops.status(d.blocked?"warn":"err",d.error);
 };
 document.getElementById("btn-stop").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","stop",{}); if(d.ok)Ops.status("warn","已停止转向");} };
 document.getElementById("btn-track").onclick = async ()=>{ if(!Ops.requireControl())return; const m=await Ops.get("/api/mount"); const d=await Ops.action("mount","set_tracking",{on:!m.tracking}); if(d.ok)Ops.status("ok",m.tracking?"已停止跟踪":"已开启跟踪"); };
@@ -138,6 +213,206 @@ document.querySelectorAll(".pad button").forEach(b=>b.onclick=async ()=>{
 document.addEventListener("ops:ready", refresh);
 Ops.onEvent((e)=>{ if(e.domain==="mount") refresh(); });
 setInterval(()=>{ if(!document.hidden) refresh(); }, 1500);
+
+/* ════════ 天图 SkyChart:ASIAIR 风格的赤道仪指向天球(纯前端 canvas,只读) ════════ */
+window.SkyChart = (function(){
+  const RAD = Math.PI/180, $ = id => document.getElementById(id);
+  const cv = $("skychart"), ctx = cv.getContext("2d"), tip = $("sky-tip");
+  const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const pad = n => String(n).padStart(2,"0");
+
+  const VCY=0.72;           // 天球中心垂直位置(占画布高比):下移到约 3/4 处,地面压到底部,上方多留天空
+  let vAz=160, vEl=30, vFov=64;
+  let skyEq=1, skyAlt=1, skyGnd=1, gEq=0, gAlt=0, gGnd=0;
+  let model=null, aimed=false, userMoved=false, reveal=REDUCED?1:0;
+
+  function lstHours(date,lng){const jd=date.getTime()/86400000+2440587.5,d=jd-2451545.0;
+    let g=280.46061837+360.98564736629*d;g=((g%360)+360)%360;
+    let l=g+lng;l=((l%360)+360)%360;return l/15;}
+  function eqToAltAz(raH,decD,lstH,latD){
+    const H=(lstH-raH)*15*RAD,dec=decD*RAD,lat=latD*RAD;
+    const sA=Math.sin(dec)*Math.sin(lat)+Math.cos(dec)*Math.cos(lat)*Math.cos(H);
+    const alt=Math.asin(Math.max(-1,Math.min(1,sA)));
+    const y=-Math.sin(H)*Math.cos(dec);
+    const x=Math.sin(dec)*Math.cos(lat)-Math.cos(dec)*Math.sin(lat)*Math.cos(H);
+    let az=Math.atan2(y,x);if(az<0)az+=2*Math.PI;
+    return{az:az/RAD,alt:alt/RAD};}
+  function altAzToEq(azD,altD,lstH,latD){
+    const az=azD*RAD,alt=altD*RAD,lat=latD*RAD;
+    const sD=Math.sin(lat)*Math.sin(alt)+Math.cos(lat)*Math.cos(alt)*Math.cos(az);
+    const dec=Math.asin(Math.max(-1,Math.min(1,sD)));
+    const H=Math.atan2(-Math.sin(az)*Math.cos(alt),Math.sin(alt)*Math.cos(lat)-Math.cos(alt)*Math.sin(lat)*Math.cos(az));
+    let ra=lstH-H/(15*RAD);ra=((ra%24)+24)%24;
+    return{ra,dec:dec/RAD};}
+  const fmtHMS=h=>{h=((h%24)+24)%24;const H=Math.floor(h),M=Math.floor((h-H)*60),S=Math.floor(((h-H)*60-M)*60);
+    return `${pad(H)}ʰ${pad(M)}ᵐ${pad(S)}ˢ`;};
+  const fmtDMS=d=>{const s=d<0?"−":"+";d=Math.abs(d);const D=Math.floor(d),M=Math.floor((d-D)*60),S=Math.floor(((d-D)*60-M)*60);
+    return `${s}${pad(D)}°${pad(M)}′${pad(S)}″`;};
+
+  const STARS=(()=>{let s=20260616;const rnd=()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return((s>>>0)/4294967296);};
+    return Array.from({length:360},()=>({ra:rnd()*24,dec:Math.asin(2*rnd()-1)/RAD,m:rnd(),ph:rnd()*6.28,sp:.5+rnd()*1.5}));})();
+
+  function project(az,alt,scale,cx,cy){
+    const a=az*RAD,e=alt*RAD,a0=vAz*RAD,e0=vEl*RAD;
+    const c=Math.sin(e0)*Math.sin(e)+Math.cos(e0)*Math.cos(e)*Math.cos(a-a0);
+    if(c<-.25)return null;
+    const k=2/(1+c);
+    return{x:cx+k*Math.cos(e)*Math.sin(a-a0)*scale,
+           y:cy-k*(Math.cos(e0)*Math.sin(e)-Math.sin(e0)*Math.cos(e)*Math.cos(a-a0))*scale};}
+  function invProject(px,py,scale,cx,cy){
+    const X=(px-cx)/scale,Y=-(py-cy)/scale,rho=Math.hypot(X,Y);
+    if(rho<1e-9)return{az:vAz,alt:vEl};
+    const c=2*Math.atan(rho/2),e0=vEl*RAD;
+    const alt=Math.asin(Math.cos(c)*Math.sin(e0)+Y*Math.sin(c)*Math.cos(e0)/rho);
+    const az=vAz*RAD+Math.atan2(X*Math.sin(c),rho*Math.cos(e0)*Math.cos(c)-Y*Math.sin(e0)*Math.sin(c));
+    return{az:((az/RAD)%360+360)%360,alt:alt/RAD};}
+  function strokePath(pts,style,w,dash){
+    ctx.strokeStyle=style;ctx.lineWidth=w;ctx.setLineDash(dash||[]);
+    let open=false;
+    for(const p of pts){
+      if(!p){if(open){ctx.stroke();open=false;}continue;}
+      if(!open){ctx.beginPath();ctx.moveTo(p.x,p.y);open=true;}else ctx.lineTo(p.x,p.y);
+    }
+    if(open)ctx.stroke();ctx.setLineDash([]);}
+
+  function update(m){
+    if(!m||!m.connected){ model=null; return; }
+    const lat = (m.site_lat!=null?m.site_lat:40), lng = (m.site_lng!=null?m.site_lng:116);
+    const lst0 = (m.lst_hours!=null && m.lst_hours!==0) ? m.lst_hours : lstHours(new Date(),lng);
+    model = {
+      lat, lng,
+      tracking: m.tracking===true,
+      scopeEq: {ra:m.ra_hours, dec:m.dec_degrees},
+      scopeAA: (m.ra_hours!=null) ? eqToAltAz(m.ra_hours, m.dec_degrees, lst0, lat) : null,
+      parked: !!m.at_park,
+      target: (m.target_ra_hours!=null) ? {name:m.target_name||"目标", ra:m.target_ra_hours, dec:m.target_dec_degrees} : null,
+    };
+    if(!aimed && !userMoved && model.scopeAA){ aimed=true;
+      vAz=model.scopeAA.az; vEl=Math.max(8,Math.min(64,model.scopeAA.alt)); }
+  }
+  const lstNow = ()=> lstHours(new Date(), model?model.lng:116);
+  function scopeNow(){
+    if(!model || model.scopeEq.ra==null) return null;
+    if(model.tracking || !model.scopeAA) return {eq:model.scopeEq, parked:model.parked};
+    const eq=altAzToEq(model.scopeAA.az, model.scopeAA.alt, lstNow(), model.lat);
+    return {eq, parked:true};
+  }
+
+  function drawSky(now,dt){
+    const w=cv.clientWidth,h=cv.clientHeight,dpr=devicePixelRatio||1;
+    if(!w||!h)return;
+    if(cv.width!==w*dpr||cv.height!==h*dpr){cv.width=w*dpr;cv.height=h*dpr;}
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const lat = model?model.lat:40, lst=lstNow();
+    const cx=w/2,cy=h*VCY,scale=Math.min(w,h)/(vFov*RAD);
+    const P=(az,alt)=>project(az,alt,scale,cx,cy);
+    const rv=reveal, ts=now/1000;
+
+    if(gAlt>.01){ctx.globalAlpha=gAlt*rv;
+      for(let a=0;a<=80;a+=20){const pts=[];for(let z=0;z<=360;z+=3)pts.push(P(z,a));strokePath(pts,cssv("--sky-grid-alt"),1);}
+      for(let z=0;z<360;z+=30){const pts=[];for(let a=0;a<=88;a+=3)pts.push(P(z,a));strokePath(pts,cssv("--sky-grid-alt"),1);}
+      ctx.globalAlpha=1;}
+    if(gEq>.01){ctx.globalAlpha=gEq*rv;
+      for(let dec=-60;dec<=80;dec+=20){const pts=[];
+        for(let raH=0;raH<=24.01;raH+=.2){const aa=eqToAltAz(raH,dec,lst,lat);pts.push(skyGnd&&aa.alt<-1?null:P(aa.az,aa.alt));}
+        strokePath(pts,cssv("--sky-grid-eq"),dec===0?1.6:1,dec===0?[]:[4,5]);}
+      for(let raH=0;raH<24;raH+=2){const pts=[];
+        for(let dec=-85;dec<=85;dec+=2){const aa=eqToAltAz(raH,dec,lst,lat);pts.push(skyGnd&&aa.alt<-1?null:P(aa.az,aa.alt));}
+        strokePath(pts,cssv("--sky-grid-eq"),1,[4,5]);}
+      ctx.globalAlpha=1;}
+
+    ctx.fillStyle=cssv("--sky-star");
+    for(const st of STARS){
+      const aa=eqToAltAz(st.ra,st.dec,lst,lat);
+      if(skyGnd&&gGnd>.5&&aa.alt<0)continue;
+      const p=P(aa.az,aa.alt);if(!p||p.x<-20||p.x>w+20||p.y<-20||p.y>h+20)continue;
+      const tw=REDUCED?1:(.72+.28*Math.sin(ts*st.sp+st.ph));
+      ctx.globalAlpha=(.28+st.m*.6)*tw*rv;
+      ctx.beginPath();ctx.arc(p.x,p.y,st.m>.96?2:st.m>.8?1.4:.8,0,7);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    if(skyGnd&&gGnd>.01){
+      ctx.globalAlpha=gGnd*rv;
+      const pts=[];for(let z=0;z<=360;z+=2)pts.push(P(z,0));
+      strokePath(pts,cssv("--sky-horizon"),1.3);
+      const g=ctx.createLinearGradient(0,h*.80,0,h);
+      g.addColorStop(0,"rgba(0,0,0,0)");g.addColorStop(1,cssv("--sky-ground"));
+      ctx.fillStyle=g;ctx.fillRect(0,h*.80,w,h*.20);
+      ctx.fillStyle=cssv("--sky-horizon");ctx.font="600 11px 'Noto Serif SC',serif";
+      [["北",0],["东",90],["南",180],["西",270]].forEach(([t,az])=>{const p=P(az,1.5);if(p)ctx.fillText(t,p.x-5,p.y-6);});
+      ctx.globalAlpha=1;
+    }
+
+    const sc=scopeNow();
+    if(sc){
+      const aa=eqToAltAz(sc.eq.ra,sc.eq.dec,lst,lat),ps=P(aa.az,aa.alt);
+      if(ps){
+        ctx.globalAlpha=rv;
+        ctx.strokeStyle=cssv("--sky-scope");ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.arc(ps.x,ps.y,14,0,7);ctx.stroke();
+        ctx.beginPath();
+        [[-22,0,-8,0],[8,0,22,0],[0,-22,0,-8],[0,8,0,22]].forEach(([a,b,c,d])=>{
+          ctx.moveTo(ps.x+a,ps.y+b);ctx.lineTo(ps.x+c,ps.y+d);});
+        ctx.stroke();
+        ctx.fillStyle=cssv("--sky-scope");ctx.font="600 12px 'Noto Serif SC',serif";
+        ctx.fillText("镜指向"+(sc.parked?" · 停泊":""),ps.x+18,ps.y-12);
+        ctx.globalAlpha=1;
+      }
+    }
+    if(model&&model.target){
+      const aa=eqToAltAz(model.target.ra,model.target.dec,lst,lat),pt=P(aa.az,aa.alt);
+      if(pt){
+        ctx.globalAlpha=rv;
+        ctx.strokeStyle=cssv("--sky-target");ctx.lineWidth=1.2;
+        ctx.strokeRect(pt.x-7,pt.y-7,14,14);
+        ctx.fillStyle=cssv("--sky-target");ctx.font="600 12px 'Noto Serif SC',serif";
+        ctx.fillText(model.target.name||"目标",pt.x+12,pt.y+4);
+        ctx.globalAlpha=1;
+      }
+    }
+  }
+
+  let lastT=performance.now();
+  function loop(now){
+    const dt=Math.min(.1,(now-lastT)/1000);lastT=now;
+    if(reveal<1)reveal=Math.min(1,reveal+dt/1.2);
+    const ease=(c,t)=>c+(t-c)*Math.min(1,dt*5);
+    gEq=ease(gEq,skyEq);gAlt=ease(gAlt,skyAlt);gGnd=ease(gGnd,skyGnd);
+    drawSky(now,dt);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  let drag=null;
+  cv.addEventListener("pointerdown",e=>{userMoved=true;drag={x:e.clientX,y:e.clientY,az:vAz,el:vEl};
+    cv.classList.add("dragging");cv.setPointerCapture(e.pointerId);tip.style.display="none";});
+  cv.addEventListener("pointermove",e=>{
+    const r=cv.getBoundingClientRect();
+    if(drag){vAz=((drag.az-(e.clientX-drag.x)*.25)%360+360)%360;
+      vEl=Math.max(-5,Math.min(85,drag.el+(e.clientY-drag.y)*.2));return;}
+    if(!model){tip.style.display="none";return;}
+    const scale=Math.min(cv.clientWidth,cv.clientHeight)/(vFov*RAD);
+    const aa=invProject(e.clientX-r.left,e.clientY-r.top,scale,cv.clientWidth/2,cv.clientHeight*VCY);
+    if(aa.alt<-2){tip.style.display="none";return;}
+    const eq=altAzToEq(aa.az,aa.alt,lstNow(),model.lat);
+    tip.textContent=`RA ${fmtHMS(eq.ra)} · Dec ${fmtDMS(eq.dec)}`;
+    tip.style.left=(e.clientX-r.left+14)+"px";tip.style.top=(e.clientY-r.top-8)+"px";tip.style.display="block";});
+  cv.addEventListener("pointerleave",()=>tip.style.display="none");
+  cv.addEventListener("pointerup",()=>{drag=null;cv.classList.remove("dragging");});
+  cv.addEventListener("wheel",e=>{userMoved=true;e.preventDefault();
+    vFov=Math.max(16,Math.min(92,vFov+(e.deltaY>0?5:-5)));},{passive:false});
+
+  const toggle=(id,get,set)=>$(id).addEventListener("click",()=>{set(get()?0:1);
+    $(id).classList.toggle("on",!!get());});
+  toggle("tg-eq",()=>skyEq,v=>skyEq=v);
+  toggle("tg-alt",()=>skyAlt,v=>skyAlt=v);
+  toggle("tg-gnd",()=>skyGnd,v=>skyGnd=v);
+
+  return { update };
+})();
 </script>
 </body>
 </html>

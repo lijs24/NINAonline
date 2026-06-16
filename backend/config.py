@@ -41,10 +41,26 @@ class Settings:
     nina_api_path: str = "/v2/api"
     nina_socket_path: str = "/v2/socket"
 
+    # PHD2 事件服务器(与 NINA 连 PHD2 同一端口,多客户端并存)。
+    # NINA 的 ninaAPI 不暴露导星画面,只能直连 PHD2 的 get_star_image RPC 取
+    # 它跟踪的星点附近那一块裁切(整幅传感器画面 PHD2 不开放)。
+    phd2_host: str = os.environ.get("NINAWEB_PHD2_HOST", "127.0.0.1")
+    phd2_port: int = int(os.environ.get("NINAWEB_PHD2_PORT", "4400"))
+    # 请求裁切边长(像素,≥15;PHD2 以星点为中心裁,实际不超过此值且受帧边界限制)
+    phd2_star_size: int = int(os.environ.get("NINAWEB_PHD2_STAR_SIZE", "200"))
+
     # 观测站点(模拟引擎与坐标换算用)—— 默认乌兰察布远程台附近
     site_lat: float = float(os.environ.get("NINAWEB_LAT", "41.0"))
     site_lng: float = float(os.environ.get("NINAWEB_LNG", "113.1"))
     site_elev: float = float(os.environ.get("NINAWEB_ELEV", "1400"))
+
+    # ── 赤道仪安全护栏(防打腿)──────────────────────────────────────
+    # slew/goto 目标地平高度低于此值(度)直接拒绝。0 = 仅拒地平线以下。
+    mount_min_alt_deg: float = float(os.environ.get("NINAWEB_MOUNT_MIN_ALT_DEG", "0"))
+    # 过中天限位(度):>0 时,目标在「当前墩侧」越过中天进入配重上扬区超过该角度→拒绝。
+    # <=0 关闭。依赖 ASCOM SideOfPier 约定(pierEast=镜在东·常态看西 HA>0;pierWest 反之),
+    # 不同驱动可能相反 —— 务必保留 NINA 自身中天翻转作权威保护,并用一次已知指向核对方向。
+    mount_meridian_limit_deg: float = float(os.environ.get("NINAWEB_MOUNT_MERIDIAN_LIMIT_DEG", "0"))
 
     # 协作锁租约(秒)
     control_lease_seconds: int = 45

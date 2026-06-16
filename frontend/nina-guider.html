@@ -12,6 +12,13 @@
   .legend{display:flex;gap:18px;align-items:center;margin-top:12px;font-size:13px;color:var(--ink-dim);}
   .legend i{display:inline-block;width:18px;height:2px;vertical-align:middle;margin-right:6px;}
   .legend i.ra{background:var(--gold);} .legend i.dec{background:var(--celestial);}
+  /* 导星星点画面 —— PHD2 get_star_image 裁切 */
+  .gimg-stage{position:relative;width:100%;max-width:560px;margin:4px auto 0;aspect-ratio:1/1;
+    border:1px solid var(--hair);background:var(--sky-2);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  #gstar{display:block;width:100%;height:100%;}
+  .gimg-empty{color:var(--ink-dim);font-style:italic;text-align:center;padding:0 18px;line-height:1.7;}
+  .gimg-meta{display:flex;gap:22px;justify-content:center;margin-top:10px;font-size:13px;color:var(--ink-dim);}
+  .gimg-meta b{color:var(--ink);font-weight:400;font-variant-numeric:tabular-nums;}
 </style>
 </head>
 <body>
@@ -20,10 +27,21 @@
 <main class="wrap view-pending">
   <div class="col-rail">
     <div>
-      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>导星曲线</h2>
-        <span class="en">Guide Graph</span><span id="g-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>导星画面</h2>
+        <span class="en">Guide Star</span><span id="g-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
       <div id="g-nc" class="muted em" style="display:none">「导星相机」未连接 —— 请到「设备」页连接</div>
       <div id="main">
+        <div class="gimg-stage">
+          <canvas id="gstar" width="560" height="560" style="display:none"></canvas>
+          <div id="gimg-empty" class="gimg-empty">等待星点画面…</div>
+        </div>
+        <div class="gimg-meta">
+          <span>帧 <b id="gimg-frame">—</b></span>
+          <span>裁切 <b id="gimg-size">—</b> px</span>
+          <span class="muted">PHD2 跟踪星点 · 金叉为锁定位</span>
+        </div>
+
+        <div class="sec-h"><span class="rn">Ⅱ</span><h2>导星曲线</h2><span class="en">Guide Graph</span></div>
         <canvas id="graph" width="900" height="340"></canvas>
         <div class="legend">
           <span><i class="ra"></i>赤经 <em class="em">RA</em></span>
@@ -31,7 +49,7 @@
           <span class="muted">纵轴 ±<span id="g-span">4</span>″ · 发丝线为 ±RMS</span>
         </div>
 
-        <div class="sec-h"><span class="rn">Ⅱ</span><h2>控制</h2><span class="en">Control</span></div>
+        <div class="sec-h"><span class="rn">Ⅲ</span><h2>控制</h2><span class="en">Control</span></div>
         <div class="ctls">
           <button class="cap" id="btn-start">开始导星</button>
           <button class="cap danger" id="btn-stop">停止</button>
@@ -174,6 +192,55 @@ function draw(){
 function clamp(v){ return Math.max(-SPAN, Math.min(SPAN, v)); }
 function getCss(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+// -- 导星星点画面(PHD2 get_star_image)-------------------------------- //
+const _gImg = new Image();   // 复用同一 <img> 解码,避免堆积
+let _gImgPending = null;
+_gImg.onload = ()=>{ if(_gImgPending){ drawStar(_gImg, _gImgPending); _gImgPending=null; } };
+
+async function refreshStarImage(){
+  if(lastState === null) return;
+  const cv = document.getElementById("gstar");
+  const empty = document.getElementById("gimg-empty");
+  if(!cv || !empty) return;
+  if(lastState === "idle" || lastState === null){
+    cv.style.display="none"; empty.style.display="";
+    empty.textContent="未在导星 —— 开始导星后显示星点画面";
+    setT("gimg-frame","—"); setT("gimg-size","—"); return;
+  }
+  const r = await Ops.get("/api/guider/star-image");
+  if(!r || !r.available){
+    cv.style.display="none"; empty.style.display="";
+    empty.textContent=(r && r.reason) ? r.reason : "导星画面不可用";
+    setT("gimg-frame","—"); setT("gimg-size","—"); return;
+  }
+  empty.style.display="none"; cv.style.display="";
+  setT("gimg-frame", r.frame!=null ? ("#"+r.frame) : "—");
+  setT("gimg-size", r.width+"×"+r.height);
+  _gImgPending = r;
+  _gImg.src = r.image;
+}
+
+function drawStar(im, r){
+  const cv = document.getElementById("gstar");
+  if(!cv) return;
+  const ctx = cv.getContext("2d");
+  const N = cv.width;
+  ctx.imageSmoothingEnabled = false;     // 保留导星裁切的像素质感(asiair/PHD2 风)
+  ctx.fillStyle = getCss("--sky-2"); ctx.fillRect(0,0,N,N);
+  const s = Math.min(N/r.width, N/r.height);
+  const dw = r.width*s, dh = r.height*s, ox=(N-dw)/2, oy=(N-dh)/2;
+  ctx.drawImage(im, ox, oy, dw, dh);
+  if(r.star){
+    const x = ox + r.star[0]*s, y = oy + r.star[1]*s, g=12;
+    ctx.strokeStyle = getCss("--gold"); ctx.lineWidth=1.4;
+    ctx.beginPath();
+    ctx.moveTo(x-g,y); ctx.lineTo(x-4,y); ctx.moveTo(x+4,y); ctx.lineTo(x+g,y);
+    ctx.moveTo(x,y-g); ctx.lineTo(x,y-4); ctx.moveTo(x,y+4); ctx.lineTo(x,y+g);
+    ctx.stroke();
+    ctx.globalAlpha=.7; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+  }
+}
+
 // -- 控制 -------------------------------------------------------------- //
 document.getElementById("btn-start").onclick = async ()=>{
   if(!Ops.requireControl("guider")) return;
@@ -196,12 +263,14 @@ document.getElementById("btn-clearcal").onclick = async ()=>{
   const d = await Ops.action("guider","clear_calibration",{}); if(d.ok) Ops.status("warn","已清除校准 · 下次导星将重新校准");
 };
 
-document.addEventListener("ops:ready", ()=>{ refresh().then(refreshGraph); });
+document.addEventListener("ops:ready", ()=>{ refresh().then(refreshGraph).then(refreshStarImage); });
 Ops.onEvent((e)=>{
   if(e.event==="GUIDER-START"||e.event==="GUIDER-STOP"||e.event==="GUIDER-DITHER"||e.domain==="guider")
     refresh().then(refreshGraph);
 });
 setInterval(()=>{ if(!document.hidden){ refresh(); refreshGraph(); } }, 1000);
+// 星点画面较重(~百 KB/帧),独立较慢节奏轮询
+setInterval(()=>{ if(!document.hidden) refreshStarImage(); }, 1500);
 </script>
 </body>
 </html>

@@ -480,6 +480,26 @@ class SimGateway(NinaGateway):
     async def get_guider_graph(self) -> list[m.GuideStep]:
         return self._guide_steps[-120:]
 
+    async def get_guider_star_image(self) -> dict:
+        import base64
+        g = self.guider
+        if not g.connected or g.state not in ("guiding", "dithering", "calibrating"):
+            return {"available": False, "reason": "SIM:未在导星(开始导星后显示星点画面)"}
+        size = max(15, int(self.s.phd2_star_size))
+        last = self._guide_steps[-1] if self._guide_steps else None
+        drift = (last.ra_raw if last else 0.0)
+        img, sx, sy = imaging.render_guide_star(
+            size, seed=int(self._guide_t0) & 0x7FFFFFFF,
+            hfd=g.hfd or 2.6, snr=g.snr or 40.0, drift=drift)
+        png = imaging.stretch_guide_png(img)
+        return {
+            "available": True,
+            "frame": int(self._guide_t0),
+            "width": size, "height": size,
+            "star": [sx, sy],
+            "image": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+        }
+
     async def get_rotator(self) -> m.RotatorState:
         return self.rotator
 

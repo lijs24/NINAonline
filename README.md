@@ -108,6 +108,8 @@ NINAWEB_PROVIDER=live NINAWEB_NINA_URL=http://127.0.0.1:1888 python run.py
 | `NINAWEB_HOST` | `0.0.0.0` | 监听地址(0.0.0.0=局域网可达) |
 | `NINAWEB_PORT` | `8788` | 端口 |
 | `NINAWEB_NINA_URL` | `http://127.0.0.1:1888` | NINA Advanced API 地址 |
+| `NINAWEB_PHD2_HOST`/`_PORT` | `127.0.0.1`/`4400` | PHD2 事件服务器(直连取导星画面) |
+| `NINAWEB_PHD2_STAR_SIZE` | `200` | 导星画面裁切边长(px,≥15) |
 | `NINAWEB_LAT`/`NINAWEB_LNG` | `41.0`/`113.1` | 观测站点(坐标换算) |
 
 ---
@@ -120,7 +122,7 @@ NINAWEB_PROVIDER=live NINAWEB_NINA_URL=http://127.0.0.1:1888 python run.py
 - 总览/设备:`/api/status` `/api/devices` `/api/equipment/{type}/{list|connect|disconnect}`
 - 状态:`/api/{camera|mount|focuser|filterwheel|guider|rotator|dome|flatdevice|switch|weather|safety|sequence|framing}`
 - 影像:`/api/camera/current-image` `/api/camera/image` `/api/camera/histogram`
-- 对焦/导星:`/api/focuser/autofocus` `/api/guider/graph`
+- 对焦/导星:`/api/focuser/autofocus` `/api/guider/graph` `/api/guider/star-image`(PHD2 跟踪星点裁切画面)
 - 辅助:`/api/{dome,flatdevice,switch}/action` · `/api/conditions`(日高度/暮光/安全) · `/api/camera/platesolve`
 - 序列:`/api/sequence/plan`(整份计划,含 loop_count/reject_hfr_over/abort_on_unsafe/暮光) `/api/sequence/action`
 - 构图/图库:`/api/framing/search` `/api/library/{summary,list,thumb,image}`
