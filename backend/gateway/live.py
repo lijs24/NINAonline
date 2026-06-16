@@ -344,6 +344,7 @@ class LiveGateway(NinaGateway):
         if isinstance(info, dict) and not info.get("_error"):
             fw.connected = bool(info.get("Connected"))
             fw.name = info.get("Name", "")
+            fw.is_moving = bool(info.get("IsMoving"))
             sel = info.get("SelectedFilter") or {}
             fw.position = int(sel.get("Id", 0)) if sel else 0
             for fl in info.get("AvailableFilters", []) or []:

@@ -421,8 +421,18 @@ function fwWritable(){ return !Ops.readonly || Ops.writableDomains.includes("fil
 async function pushControls(){
   await Ops.action("camera","set_control",{name:"Gain",value:+ctlVal("gain")});
   await Ops.action("camera","set_control",{name:"Offset",value:+ctlVal("offset")});
-  if(!document.getElementById("filter").disabled && fwWritable())
-    await Ops.action("filterwheel","change",{position:+ctlVal("filter")});
+  const fsel = document.getElementById("filter");
+  if(fsel.disabled || !fwWritable()) return;
+  const target = +ctlVal("filter");
+  let fw = await Ops.get("/api/filterwheel");
+  if(!fw.connected || fw.position === target) return;     // 已在目标滤镜,无需切
+  setCap("切换滤镜中…");
+  await Ops.action("filterwheel","change",{position:target});
+  for(let i=0;i<40 && !abortRequested;i++){               // 等转到位(≤10s),避免在转动中曝光
+    await new Promise(r=>setTimeout(r,250));
+    fw = await Ops.get("/api/filterwheel");
+    if(fw.position===target && !fw.is_moving) break;
+  }
 }
 
 document.addEventListener("ops:ready", ()=>{ loadFilters(); refresh(); refreshImage(); });
