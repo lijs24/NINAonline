@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 构图</title>
 <style>
   .res{padding:6px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
@@ -19,7 +21,7 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>目标检索</h2>
@@ -48,7 +50,16 @@
 
     <aside class="rail">
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">当前构图</h2></div>
-      <div id="meta"></div>
+      <div id="meta">
+        <div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold" id="f-target">—</span></div>
+        <div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel" id="f-ra">--</span></div>
+        <div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel" id="f-dec">--</span></div>
+        <div class="kv"><span class="k">类型 <em>type</em></span><span class="v" id="f-type">—</span></div>
+        <div class="kv"><span class="k">星等 <em>mag</em></span><span class="v" id="f-mag">--</span></div>
+        <div class="kv"><span class="k">视大小 <em>arcmin</em></span><span class="v" id="f-size">--</span></div>
+        <div class="kv"><span class="k">旋转 <em>rotation</em></span><span class="v gold" id="f-rot">--</span></div>
+        <div class="kv"><span class="k">视场 <em>fov</em></span><span class="v" id="f-fov">--</span></div>
+      </div>
     </aside>
   </div>
 </main>
@@ -121,20 +132,22 @@ function syncRot(v){
   document.getElementById("rot-deg").textContent = v + "°";
 }
 
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 function renderMeta(){
-  const host = document.getElementById("meta");
-  if(!cur){ host.innerHTML = ""; return; }
-  const named = cur.target_name && cur.target_name.length;
+  if(!cur){
+    setT("f-target","—"); setT("f-ra","--"); setT("f-dec","--"); setT("f-type","—");
+    setT("f-mag","--"); setT("f-size","--"); setT("f-rot","--"); setT("f-fov","--");
+    return;
+  }
   const sel = selected;
-  host.innerHTML =
-     `<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${cur.target_name||'—'}</span></div>`
-    +`<div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel">${Ops.fmtRA(cur.ra_hours)}</span></div>`
-    +`<div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel">${Ops.fmtDec(cur.dec_degrees)}</span></div>`
-    +`<div class="kv"><span class="k">类型 <em>type</em></span><span class="v">${sel&&sel.type?sel.type:'—'}</span></div>`
-    +`<div class="kv"><span class="k">星等 <em>mag</em></span><span class="v">${sel&&sel.magnitude!=null?sel.magnitude.toFixed(1):'—'}</span></div>`
-    +`<div class="kv"><span class="k">视大小 <em>arcmin</em></span><span class="v">${sel&&sel.size_arcmin!=null?sel.size_arcmin.toFixed(1)+'′':'—'}</span></div>`
-    +`<div class="kv"><span class="k">旋转 <em>rotation</em></span><span class="v gold">${cur.rotation.toFixed(1)}°</span></div>`
-    +`<div class="kv"><span class="k">视场 <em>fov</em></span><span class="v">${cur.fov_width_deg.toFixed(2)}° × ${cur.fov_height_deg.toFixed(2)}°</span></div>`;
+  setT("f-target", cur.target_name||'—');
+  setT("f-ra", Ops.fmtRA(cur.ra_hours));
+  setT("f-dec", Ops.fmtDec(cur.dec_degrees));
+  setT("f-type", sel&&sel.type?sel.type:'—');
+  setT("f-mag", sel&&sel.magnitude!=null?sel.magnitude.toFixed(1):'—');
+  setT("f-size", sel&&sel.size_arcmin!=null?sel.size_arcmin.toFixed(1)+'′':'—');
+  setT("f-rot", cur.rotation.toFixed(1)+"°");
+  setT("f-fov", cur.fov_width_deg.toFixed(2)+"° × "+cur.fov_height_deg.toFixed(2)+"°");
 }
 
 let rotDirty = false;     // 用户正在拖动旋转角, 暂停轮询覆盖

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 滤镜轮</title>
 <style>
   .now{margin:2px 0 4px;display:flex;align-items:baseline;gap:14px;}
@@ -26,12 +28,19 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>当前滤镜</h2>
         <span class="en">Current Filter</span><span id="fw-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="now"></div>
+      <div id="now">
+        <div class="now"><span class="big" id="fw-cur-name">—</span>
+          <span class="sub muted">槽位 <span class="v gold" id="fw-cur-pos">#--</span><span id="fw-cur-moving"></span></span></div>
+        <div class="kv"><span class="k">轮组 <em>wheel</em></span><span class="v" id="fw-wheel">—</span></div>
+        <div class="kv"><span class="k">对焦偏置 <em>offset</em></span><span class="v"><span id="fw-cur-offset">--</span> <span class="muted">步</span></span></div>
+      </div>
+      <div id="now-notice" class="muted em" style="display:none">
+        滤镜轮未连接 —— 请到「设备」页连接</div>
 
       <div class="sec-h"><span class="rn">Ⅱ</span><h2>滤镜槽 · 切换</h2><span class="en">Slots · Change</span>
         <button class="cap" id="btn-rename" style="margin-left:auto">编辑名称</button></div>
@@ -44,7 +53,11 @@
 
     <aside class="rail">
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">概况</h2></div>
-      <div id="summary"></div>
+      <div id="summary">
+        <div class="kv"><span class="k">槽位数 <em>count</em></span><span class="v gold" id="fw-count">--</span></div>
+        <div class="kv"><span class="k">当前槽 <em>position</em></span><span class="v gold" id="fw-pos">#--</span></div>
+        <div class="kv"><span class="k">状态 <em>state</em></span><span class="v" id="fw-statev">—</span></div>
+      </div>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">对焦偏置</h2></div>
       <div id="offsets"></div>
     </aside>
@@ -54,61 +67,94 @@
 <script src="/nina-theme.js"></script>
 <script>
 let editing = false;
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
+
+// 仅在滤镜集(数量/名称/偏置)变化时重建变长列表;平时只切高亮
+let slotsSig = null;
+function filtersSig(fw){
+  return (fw.filters||[]).map(f=>`${f.position}|${f.name}|${f.focus_offset}`).join("\n");
+}
 
 async function refresh(){
   if(editing) return;
   const fw = await Ops.get("/api/filterwheel");
   const cur = (fw.filters||[]).find(f=>f.position===fw.position);
 
-  document.getElementById("fw-state").textContent = !fw.connected ? "未连接"
-    : fw.is_moving ? "切换中…" : "就绪";
+  setT("fw-state", !fw.connected ? "未连接"
+    : fw.is_moving ? "切换中…" : "就绪");
 
   if(!fw.connected){
-    document.getElementById("now").innerHTML =
-      `<div class="muted em">滤镜轮未连接 —— 请到「设备」页连接</div>`;
+    document.getElementById("now").style.display = "none";
+    document.getElementById("now-notice").style.display = "block";
     document.getElementById("slots").innerHTML = "";
-    document.getElementById("summary").innerHTML = "";
     document.getElementById("offsets").innerHTML = "";
+    slotsSig = null;
+    setT("fw-count", "--");
+    setT("fw-pos", "#--");
+    setT("fw-statev", "—");
     document.getElementById("btn-rename").disabled = true;
     return;
   }
+  document.getElementById("now").style.display = "";
+  document.getElementById("now-notice").style.display = "none";
   document.getElementById("btn-rename").disabled = false;
 
-  document.getElementById("now").innerHTML =
-     `<div class="now"><span class="big">${cur?cur.name:'—'}</span>`
-    +`<span class="sub muted">槽位 <span class="v gold">#${fw.position}</span>`
-    +`${fw.is_moving?' · <span class="em">切换中…</span>':''}</span></div>`
-    +`<div class="kv"><span class="k">轮组 <em>wheel</em></span><span class="v">${fw.name||'—'}</span></div>`
-    +`<div class="kv"><span class="k">对焦偏置 <em>offset</em></span><span class="v">${cur?cur.focus_offset:0} <span class="muted">步</span></span></div>`;
+  // 当前滤镜读数(原位更新)
+  setT("fw-cur-name", cur ? cur.name : "—");
+  setT("fw-cur-pos", "#" + fw.position);
+  document.getElementById("fw-cur-moving").innerHTML = fw.is_moving ? ' · <span class="em">切换中…</span>' : '';
+  setT("fw-wheel", fw.name || "—");
+  setT("fw-cur-offset", cur ? cur.focus_offset : 0);
+
+  // 概况读数(原位更新)
+  setT("fw-count", fw.filters.length);
+  setT("fw-pos", "#" + fw.position);
+  setT("fw-statev", fw.is_moving ? "切换中" : "就绪");
 
   renderSlots(fw);
 
-  document.getElementById("summary").innerHTML =
-     `<div class="kv"><span class="k">槽位数 <em>count</em></span><span class="v gold">${fw.filters.length}</span></div>`
-    +`<div class="kv"><span class="k">当前槽 <em>position</em></span><span class="v gold">#${fw.position}</span></div>`
-    +`<div class="kv"><span class="k">状态 <em>state</em></span><span class="v">${fw.is_moving?'切换中':'就绪'}</span></div>`;
-
-  document.getElementById("offsets").innerHTML = fw.filters.map(f=>
-     `<div class="kv"><span class="k">${f.name} <em>#${f.position}</em></span>`
-    +`<span class="v${f.position===fw.position?' gold':''}">${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`).join("");
+  // 对焦偏置列表:仅在滤镜集变化时重建
+  const sig = filtersSig(fw);
+  if(sig !== slotsSig){
+    document.getElementById("offsets").innerHTML = fw.filters.map(f=>
+       `<div class="kv" data-pos="${f.position}"><span class="k">${f.name} <em>#${f.position}</em></span>`
+      +`<span class="v">${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`).join("");
+  }
+  // 当前槽高亮(toggle class,不重建)
+  document.querySelectorAll("#offsets .kv").forEach(el=>{
+    el.querySelector(".v").classList.toggle("gold", +el.dataset.pos===fw.position);
+  });
 }
 
 function renderSlots(fw){
   const el = document.getElementById("slots");
-  el.innerHTML = fw.filters.map(f=>{
-    const cur = f.position===fw.position;
-    return `<div class="slot${cur?' cur':''}" data-pos="${f.position}"${fw.is_moving?' aria-disabled="true"':''}>`
-      +`<span class="pos">${cur?'<span class="dot on" style="margin-right:6px"></span>':''}#${f.position}</span>`
+  const sig = filtersSig(fw);
+  if(sig !== slotsSig){
+    // 滤镜集变化 → 重建整列表
+    el.innerHTML = fw.filters.map(f=>
+       `<div class="slot" data-pos="${f.position}">`
+      +`<span class="pos"><span class="dot on cur-dot" style="margin-right:6px;display:none"></span><span class="pos-num">#${f.position}</span></span>`
       +`<span class="nm">${f.name}</span>`
-      +`<span class="off">焦偏 ${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`;
-  }).join("");
-  if(fw.is_moving) return;
-  el.querySelectorAll(".slot").forEach(s=>s.onclick=async ()=>{
-    const pos = +s.dataset.pos;
-    if(pos===fw.position){ Ops.status("ok","已是当前滤镜"); return; }
-    if(!Ops.requireControl()) return;
-    const d = await Ops.action("filterwheel","change",{position:pos});
-    if(d.ok) Ops.status("ok",`切换至 #${pos} ${fw.filters.find(x=>x.position===pos).name}`);
+      +`<span class="off">焦偏 ${f.focus_offset>=0?'+':''}${f.focus_offset}</span></div>`).join("");
+    slotsSig = sig;
+    el.querySelectorAll(".slot").forEach(s=>s.onclick=async ()=>{
+      if(s.getAttribute("aria-disabled")==="true") return;
+      const pos = +s.dataset.pos;
+      const live = await Ops.get("/api/filterwheel");
+      if(pos===live.position){ Ops.status("ok","已是当前滤镜"); return; }
+      if(!Ops.requireControl()) return;
+      const d = await Ops.action("filterwheel","change",{position:pos});
+      if(d.ok) Ops.status("ok",`切换至 #${pos} ${live.filters.find(x=>x.position===pos).name}`);
+    });
+  }
+  // 当前槽高亮 + 切换中禁用态(只切 class/属性,不重建)
+  el.querySelectorAll(".slot").forEach(s=>{
+    const cur = +s.dataset.pos===fw.position;
+    s.classList.toggle("cur", cur);
+    const dot = s.querySelector(".cur-dot");
+    if(dot) dot.style.display = cur ? "inline-block" : "none";
+    if(fw.is_moving) s.setAttribute("aria-disabled","true");
+    else s.removeAttribute("aria-disabled");
   });
 }
 
@@ -118,6 +164,7 @@ document.getElementById("btn-rename").onclick = async ()=>{
   const fw = await Ops.get("/api/filterwheel");
   if(!fw.connected || !fw.filters.length) return;
   editing = true;
+  slotsSig = null;
   document.getElementById("slots").innerHTML = fw.filters.map(f=>
      `<div class="slot" aria-disabled="true">`
     +`<span class="pos">#${f.position}</span>`
@@ -129,6 +176,7 @@ document.getElementById("btn-rename").onclick = async ()=>{
 };
 document.getElementById("btn-cancel").onclick = ()=>{
   editing = false;
+  slotsSig = null;
   document.getElementById("rename-bar").style.display = "none";
   document.getElementById("btn-rename").disabled = false;
   refresh();
@@ -142,6 +190,7 @@ document.getElementById("btn-save").onclick = async ()=>{
   if(d.ok){
     Ops.status("ok","滤镜名称已更新");
     editing = false;
+    slotsSig = null;
     document.getElementById("rename-bar").style.display = "none";
     document.getElementById("btn-rename").disabled = false;
     refresh();

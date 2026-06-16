@@ -1,115 +1,39 @@
 /* ============================================================================
- * nina-theme.js — 星图册(Celestial Atlas)主题 + 共享顶栏 + 状态行 + API/WS 客户端
+ * nina-theme.js — 星图册主题外壳 + 客户端路由 + 状态行 + API/WS 客户端
  *
- * 全站唯一的视觉与数据契约来源。任何页面:
- *   <header id="app-topbar"></header>
- *   <footer id="app-status"></footer>      (可选, 不写也会自动注入)
- *   <script src="/nina-theme.js"></script>
+ * 外壳(顶栏/状态行/主题/WebSocket/连接)只初始化一次并常驻;
+ * 点顶栏导航时,不整页重载,而是 fetch 目标页内容就地替换(带缓存+预取),
+ * 切页瞬时、无重建、无闪。出错则自动回退到整页跳转(最坏=旧行为,不会弄坏)。
  *
- * 设计宪法(勿违背 —— 让页面像"一页星图图版", 不像"软件后台"):
- *   靛蓝夜空底 #0a0e1a / 羊皮纸白字 #e9e2d0 / 金 #c9a227 为唯一强调色;
- *   全站衬线; 全站无卡片(只用发丝细线分区); 唯一圆角是 999px 胶囊;
- *   反馈写进页底状态行, 不弹 toast/modal。
+ * 页面契约不变:每页 <header id="app-topbar"> + <main class="wrap view-pending">
+ *   + 各自内联 <style>/<script> + <link rel="stylesheet" href="/nina-theme.css">。
  * ========================================================================== */
 (() => {
   if (window.__opsTheme) return;
   window.__opsTheme = true;
 
-  // -- 设计令牌 ------------------------------------------------------------ //
-  const CSS = `
-:root{
-  --sky:#0a0e1a; --sky-2:#0c1120; --ink:#e9e2d0; --ink-dim:#8b91a5;
-  --gold:#c9a227; --gold-soft:#a8861f; --celestial:#9db4d0;
-  --hair:rgba(139,145,165,.28); --hair-soft:rgba(139,145,165,.16);
-  --ok:#7d9b6a; --warn:#c9a227; --err:#b5675b;
-  --serif:"Noto Serif SC","Source Han Serif SC","Songti SC",STSong,"SimSun",Georgia,serif;
-}
-@font-face{font-family:"Noto Serif SC";font-weight:400;font-display:swap;
-  src:local("Noto Serif SC"),local("Source Han Serif SC"),url("/fonts/NotoSerifSC-Regular.woff2") format("woff2");}
-*{box-sizing:border-box;}
-html,body{margin:0;background:var(--sky);color:var(--ink);font-family:var(--serif);
-  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;}
-body{padding-top:52px;padding-bottom:34px;min-height:100vh;}
-a{color:var(--ink);text-decoration:none;}
-h1,h2,h3{font-weight:400;letter-spacing:.5px;}
-::selection{background:rgba(201,162,39,.28);}
-
-/* 顶栏 52px, 无卡片, 仅底部发丝线 */
-.ops-topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:80;
-  display:flex;align-items:center;gap:0;background:rgba(10,14,26,.94);
-  backdrop-filter:blur(6px);border-bottom:1px solid var(--hair);
-  font-family:var(--serif);}
-.ops-brand{padding:0 20px 0 22px;font-size:17px;letter-spacing:3px;color:var(--ink);
-  white-space:nowrap;}
-.ops-brand b{color:var(--gold);font-weight:400;}
-.ops-nav{display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow-x:auto;
-  scrollbar-width:none;height:100%;}
-.ops-nav::-webkit-scrollbar{display:none;}
-.ops-nav a{padding:4px 13px;color:var(--ink-dim);font-size:14.5px;white-space:nowrap;
-  border-bottom:2px solid transparent;height:52px;display:flex;align-items:center;
-  transition:color .25s;}
-.ops-nav a:hover{color:var(--ink);}
-.ops-nav a.active{color:var(--gold);border-bottom-color:var(--gold);}
-.ops-nav a small{font-style:italic;color:var(--ink-dim);margin-left:5px;font-size:11px;}
-.ops-actions{display:flex;align-items:center;gap:14px;padding:0 18px;white-space:nowrap;}
-#ops-clock{color:var(--ink-dim);font-size:13px;font-variant-numeric:tabular-nums;}
-.ops-ctrl{font-size:12.5px;padding:3px 12px;border:1px solid var(--hair);border-radius:999px;
-  color:var(--ink-dim);}
-.ops-ctrl.self{color:var(--gold);border-color:var(--gold);}
-.ops-ctrl.busy{color:var(--err);border-color:var(--err);}
-.ops-role{background:transparent;color:var(--ink);border:1px solid var(--hair);
-  border-radius:999px;font-family:var(--serif);font-size:13px;padding:3px 10px;cursor:pointer;}
-.ops-role:focus{outline:none;border-color:var(--gold);}
-
-/* 状态行: [OK]一句话 ……… 时间戳 */
-.ops-status{position:fixed;bottom:0;left:0;right:0;height:34px;z-index:80;
-  display:flex;align-items:center;gap:12px;padding:0 20px;
-  background:rgba(10,14,26,.94);border-top:1px solid var(--hair);
-  font-size:13px;color:var(--ink-dim);}
-.ops-status .tag{font-style:normal;letter-spacing:1px;}
-.ops-status.ok .tag{color:var(--ok);} .ops-status.warn .tag{color:var(--warn);}
-.ops-status.err .tag{color:var(--err);}
-.ops-status .msg{color:var(--ink);} .ops-status .ts{margin-left:auto;color:var(--ink-dim);
-  font-variant-numeric:tabular-nums;}
-
-/* 通用排版原语(页面可用, 全站无卡片) */
-.wrap{max-width:1280px;margin:0 auto;padding:30px 26px;}
-.col-rail{display:grid;grid-template-columns:1fr 280px;gap:40px;}
-.rail{border-left:1px solid var(--gold);padding-left:22px;}
-.sec-h{display:flex;align-items:baseline;gap:12px;margin:34px 0 16px;
-  border-bottom:1px solid var(--hair);padding-bottom:8px;}
-.sec-h .rn{color:var(--gold);font-size:15px;letter-spacing:2px;}
-.sec-h h2{font-size:19px;margin:0;}
-.sec-h .en{font-style:italic;color:var(--ink-dim);font-size:12px;}
-.kv{display:flex;justify-content:space-between;gap:18px;padding:7px 0;
-  border-bottom:1px solid var(--hair-soft);}
-.kv .k{color:var(--ink-dim);} .kv .k em{font-style:italic;font-size:11px;margin-left:4px;}
-.kv .v{font-variant-numeric:tabular-nums;}
-.v.gold{color:var(--gold);} .v.cel{color:var(--celestial);}
-.cap{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--ink);
-  border:1px solid var(--hair);border-radius:999px;padding:6px 16px;font-family:var(--serif);
-  font-size:14px;cursor:pointer;transition:border-color .25s,color .25s;}
-.cap:hover{border-color:var(--gold);color:var(--gold);}
-.cap.solid{border-color:var(--gold);color:var(--gold);}
-.cap[disabled]{opacity:.4;cursor:not-allowed;}
-.cap.danger:hover{border-color:var(--err);color:var(--err);}
-input.fld,select.fld{background:transparent;color:var(--ink);border:1px solid var(--hair);
-  border-radius:999px;font-family:var(--serif);font-size:14px;padding:5px 13px;
-  font-variant-numeric:tabular-nums;}
-input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
-.muted{color:var(--ink-dim);} .em{font-style:italic;}
-.sup{font-size:.7em;vertical-align:.35em;color:var(--ink-dim);}
-.dot{display:inline-block;width:7px;height:7px;border-radius:999px;background:var(--ink-dim);}
-.dot.on{background:var(--gold);} .dot.warn{background:var(--err);}
-.fade{animation:opsFade .45s ease both;}
-@keyframes opsFade{from{opacity:0;transform:translateY(4px);}to{opacity:1;}}
-@media (prefers-reduced-motion:reduce){.fade{animation:none;}}
-@media(max-width:880px){.col-rail{grid-template-columns:1fr;}.rail{border-left:none;
-  border-top:1px solid var(--gold);padding-left:0;padding-top:18px;}}
-`;
-  const style = document.createElement("style");
-  style.textContent = CSS;
-  document.head.appendChild(style);
+  // ---- 生命周期跟踪:页面脚本注册的定时器 / ops:ready 监听,切页时清理 ----
+  // theme.js 在各页内联脚本之前执行,因此装好这两个拦截器后,连首屏页脚本也被纳入跟踪。
+  const realSetInterval = window.setInterval.bind(window);
+  const realAddEvent = document.addEventListener.bind(document);
+  const Page = { intervals: [], readyHandlers: [] };
+  window.setInterval = function (fn, ms, ...rest) {
+    const id = realSetInterval(fn, ms, ...rest);
+    Page.intervals.push(id);
+    return id;
+  };
+  document.addEventListener = function (type, fn, opt) {
+    if (type === "ops:ready") Page.readyHandlers.push(fn);
+    return realAddEvent(type, fn, opt);
+  };
+  function teardownPage() {
+    Page.intervals.forEach((id) => clearInterval(id));
+    Page.intervals = [];
+    Page.readyHandlers.forEach((fn) => document.removeEventListener("ops:ready", fn));
+    Page.readyHandlers = [];
+    Ops._evtHandlers.length = 0;     // 页面通过 Ops.onEvent 订阅的 WS 处理器
+    Ops._ctrlHandlers.length = 0;    // 页面通过 Ops.onControl 订阅(顶栏自身不依赖)
+  }
 
   // -- 会话身份 ------------------------------------------------------------ //
   const SID_KEY = "asiair-ops:session-id";
@@ -121,7 +45,7 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     try { localStorage.setItem(SID_KEY, sid); } catch (e) {}
   }
 
-  // -- 导航(从 NINA 能力面推导的页面集) ----------------------------------- //
+  // -- 导航(NINA 能力面推导的页面集) ------------------------------------- //
   const NAV = [
     ["总览", "/overview", "Overview"], ["设备", "/equipment", "Equipment"],
     ["相机", "/camera", "Imaging"], ["赤道仪", "/mount", "Mount"],
@@ -130,8 +54,9 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     ["构图", "/framing", "Framing"], ["辅助", "/aux", "Auxiliary"],
     ["图库", "/library", "Library"],
   ];
-  const here = location.pathname.replace(/\/$/, "") || "/overview";
-  const isActive = (p) => here === p || (p === "/overview" && here === "/");
+  const ROUTES = NAV.map(([, p]) => p);
+  const norm = (p) => (p === "/" ? "/overview" : p.replace(/\/$/, "")) || "/overview";
+  const pageFile = (p) => "/nina-" + (norm(p) === "/overview" ? "overview" : norm(p).slice(1)) + ".html";
 
   // -- API 客户端 ---------------------------------------------------------- //
   const Ops = window.Ops = {
@@ -149,9 +74,21 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
       return { ok: r.ok, status: r.status, data };
     },
 
-    async get(path) { return (await Ops.api(path)).data; },
+    async get(path) {
+      const gen = __pageGen;
+      let res;
+      try {
+        res = await Ops.api(path, { signal: __pageAbort ? __pageAbort.signal : undefined });
+      } catch (e) {
+        if (e && e.name === "AbortError") return await new Promise(() => {});  // 本页已切走:让旧回调静默丢弃,不继续
+        throw e;
+      }
+      // 仅当仍是发起它的那一页时,首个"本页域数据"返回后才淡入(防跨页竞态误 reveal 下一页)
+      if (gen === __pageGen && !__viewRevealed && path !== "/api/status" && path.indexOf("/api/control-role") < 0)
+        requestAnimationFrame(revealView);
+      return res.data;
+    },
 
-    // 写动作: POST /api/{domain}/action, 自动带 session_id
     async action(domain, action, params = {}) {
       const r = await Ops.api(`/api/${domain}/action`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -171,7 +108,6 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
       return r.data;
     },
 
-    // 页底状态行 —— 所有反馈走这里, 不弹窗
     status(level, msg) {
       const el = document.getElementById("app-status");
       if (!el) return;
@@ -193,7 +129,6 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
       return true;
     },
 
-    // 坐标格式化(雕版上标样式)
     fmtRA(h) {
       h = ((h % 24) + 24) % 24; const hh = Math.floor(h), m = (h - hh) * 60,
         mm = Math.floor(m), ss = Math.round((m - mm) * 60);
@@ -206,7 +141,7 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     },
   };
 
-  // -- WebSocket 事件流(自动重连; 页面隐藏时不强制断, 仅暂停心跳) ---------- //
+  // -- WebSocket 事件流(常驻,自动重连) ---------------------------------- //
   let ws = null, wsTimer = null;
   function connectWS() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -218,17 +153,17 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     ws.onclose = () => { clearTimeout(wsTimer); wsTimer = setTimeout(connectWS, 3000); };
     ws.onerror = () => { try { ws.close(); } catch (x) {} };
   }
-  connectWS();
 
-  // -- 顶栏渲染 ------------------------------------------------------------ //
+  // -- 顶栏(常驻,只建一次;切页只更新 active 链接) --------------------- //
   function mountTopbar() {
     const host = document.getElementById("app-topbar");
-    if (!host) return;
+    if (!host || host.dataset.built) return;
+    host.dataset.built = "1";
     host.className = "ops-topbar";
     host.innerHTML =
       `<div class="ops-brand"><b>星枢</b> · 远程台</div>`
       + `<nav class="ops-nav">${NAV.map(([t, p, en]) =>
-        `<a href="${p}" class="${isActive(p) ? "active" : ""}">${t}<small>${en}</small></a>`).join("")}</nav>`
+        `<a href="${p}">${t}<small>${en}</small></a>`).join("")}</nav>`
       + `<div class="ops-actions"><span id="ops-clock">--:--:--</span>`
       + `<span id="ops-ctrl" class="ops-ctrl">主控空闲</span>`
       + `<select id="ops-role" class="ops-role" aria-label="协作模式">`
@@ -236,10 +171,9 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
 
     const clk = host.querySelector("#ops-clock");
     const pad = (n) => String(n).padStart(2, "0");
-    setInterval(() => {
-      const d = new Date();
-      clk.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    }, 1000);
+    const tick = () => { const d = new Date(); clk.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+    tick();
+    realSetInterval(tick, 1000);   // 常驻:不被 teardown 清
 
     const ind = host.querySelector("#ops-ctrl");
     const sel = host.querySelector("#ops-role");
@@ -247,6 +181,7 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
       Ops.controlState = p;
       const holder = p && p.controller, self = !!(p && p.held_by_self);
       Ops.isController = self;
+      if (Ops.readonly) { ind.className = "ops-ctrl busy"; ind.textContent = "只读监控"; return; }
       ind.className = "ops-ctrl" + (self ? " self" : holder ? " busy" : "");
       ind.textContent = !holder ? "主控空闲" : self ? "当前主控"
         : `主控中 · ${holder.display_name || holder.client_ip || "其他"}`;
@@ -255,19 +190,26 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     };
     const poll = async () => {
       try {
-        const d = await Ops.get(`/api/control-role?session_id=${encodeURIComponent(sid)}`);
-        if (d && d.ok) render(d);
+        const d = await Ops.api(`/api/control-role?session_id=${encodeURIComponent(sid)}`);
+        if (d.ok && d.data && d.data.ok) render(d.data);
       } catch (e) {}
     };
     sel.addEventListener("change", async () => {
+      if (Ops.readonly) return;
       const d = await Ops.post("/api/control-role", { role: sel.value, session_label: "web" });
       if (d && d.ok) { render(d); Ops.status("ok", sel.value === "controller" ? "已取得主控权" : "已切回监控"); }
     });
     poll();
-    setInterval(() => { if (!document.hidden) poll(); }, 10000);
-    // 主控者心跳续租
-    setInterval(() => { if (!document.hidden && Ops.isController)
+    realSetInterval(() => { if (!document.hidden) poll(); }, 10000);
+    realSetInterval(() => { if (!document.hidden && Ops.isController)
       Ops.post("/api/control-role", { role: "controller", session_label: "web" }); }, 20000);
+  }
+
+  function updateActiveNav(path) {
+    const p = norm(path);
+    document.querySelectorAll(".ops-nav a").forEach((a) => {
+      a.classList.toggle("active", norm(a.getAttribute("href")) === p);
+    });
   }
 
   function mountStatus() {
@@ -278,10 +220,157 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
     document.body.appendChild(f);
   }
 
-  // -- 启动: /api/status 只读门禁 ----------------------------------------- //
+  // -- 内容区错峰浮现(数据就绪后) ---------------------------------------- //
+  // 内容在 view-pending(整体隐藏)下搭建+填值,布局先稳定;就绪后把各列/行拆成
+  // 浮现单元,赋递增时延并于下一帧统一放行 → 自上而下、逐列错峰浮现。
+  // 全程只动 opacity+transform(不引起回流),故不会带回任何布局位移。
+  let __viewRevealed = false, __revealTimer = null;
+  // 页面代次 + 中止器:用于切页时作废上一页在途的读取与 reveal(跨页竞态防护)
+  let __pageGen = 0, __pageAbort = null;
+  function prepareStagger(main) {
+    const units = [];
+    const visible = (el) => el.tagName !== "SCRIPT" && el.tagName !== "STYLE" && el.offsetParent !== null;
+    const isRowGroup = (el) => [...el.children].some((c) => c.matches(".kv,.row,.readout,.eq"));
+    (function collect(node) {
+      for (const ch of node.children) {
+        if (ch.matches(".rail")) {
+          if (visible(ch)) units.push(ch);                // 右栏整列作为一个浮现单元(金线随该列一起浮现,不先亮)
+        } else if (ch.matches(".col-rail, .cam-grid")) {
+          for (const col of ch.children) {                // 多列网格 → 逐列展开(.rail 列由上面分支整列收为单元)
+            if (col.matches(".rail")) { if (visible(col)) units.push(col); }
+            else collect(col);
+          }
+        } else if (isRowGroup(ch)) {
+          collect(ch);                                    // 读数组 → 递归到行
+        } else if (visible(ch)) {
+          units.push(ch);                                 // 其余可见块(跳过 display:none 的占位/通知,不占错峰名额)
+        }
+      }
+    })(main);
+    units.forEach((el, i) => {
+      el.style.animationDelay = Math.min(i * 42, 760) + "ms";
+      el.classList.add("ops-rise");       // opsRise 含 from:opacity:0 + fill:both → 起始即隐藏,无需 rAF/前置占位
+    });
+  }
+  function revealView() {
+    if (__viewRevealed) return;
+    __viewRevealed = true;
+    clearTimeout(__revealTimer);
+    const m = document.querySelector("main");
+    if (!m) return;
+    // 此刻 main 仍 view-pending(整体不可见):给各单元挂上错峰浮现动画(动画 fill 起始为 opacity:0),
+    // 再移除 view-pending → main 转可见,各单元仍由动画 fill 处于 opacity:0,随后逐列浮现。全程不依赖 rAF。
+    prepareStagger(m);
+    m.classList.remove("view-pending");
+  }
+
+  // -- 客户端路由 ---------------------------------------------------------- //
+  const cache = {};
+  let pageStyleEl = null;
+
+  async function fetchPage(path) {
+    if (cache[path]) return cache[path];
+    const html = await fetch(pageFile(path), { cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); });
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const main = doc.querySelector("main");
+    const style = [...doc.querySelectorAll("head style")]
+      .filter((s) => !/html\s*,\s*body\s*\{\s*background:#0a0e1a/.test(s.textContent))
+      .map((s) => s.textContent).join("\n");
+    const script = [...doc.querySelectorAll("body script:not([src])")]
+      .map((s) => s.textContent).join("\n");
+    cache[path] = { main: main ? main.outerHTML : "<main class='wrap'></main>", style, script, title: doc.title || "星枢" };
+    return cache[path];
+  }
+
+  async function loadInto(path, push) {
+    const entry = await fetchPage(path);
+    if (__pageAbort) __pageAbort.abort();      // 作废上一页在途读取
+    __pageAbort = new AbortController();
+    __pageGen++;                                // 作废上一页在途的 reveal 触发
+    teardownPage();
+    if (pageStyleEl) pageStyleEl.textContent = entry.style;
+    const cur = document.querySelector("main");
+    const tmp = document.createElement("div");
+    tmp.innerHTML = entry.main;
+    const newMain = tmp.querySelector("main") || tmp.firstElementChild;
+    newMain.classList.add("view-pending");
+    if (cur) cur.replaceWith(newMain); else document.body.appendChild(newMain);
+    document.title = entry.title;
+    __viewRevealed = false;
+    if (push) history.pushState({ path }, "", path);
+    updateActiveNav(path);
+    // 运行页面脚本:IIFE 包裹避免顶层 const/let 重复声明,作用域随切页释放
+    const s = document.createElement("script");
+    s.textContent = "(function(){\n" + entry.script + "\n})();";
+    document.body.appendChild(s);
+    s.remove();
+    document.dispatchEvent(new CustomEvent("ops:ready"));
+    clearTimeout(__revealTimer);
+    __revealTimer = setTimeout(revealView, 1200);   // 兜底:数据不来也要显示
+    // 预取其余页面(空闲时,只取一次)
+    prefetchAll();
+  }
+
+  function navigate(path, push = true) {
+    path = norm(path);
+    if (!ROUTES.includes(path)) { location.href = path; return; }
+    if (path === norm(location.pathname)) return;
+    loadInto(path, push).catch((e) => { console.warn("[router] 回退整页跳转:", e); location.href = path; });
+  }
+
+  let __prefetched = false;
+  function prefetchAll() {
+    if (__prefetched) return;
+    __prefetched = true;
+    const run = () => ROUTES.forEach((p) => { fetchPage(p).catch(() => {}); });
+    if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 3000 });
+    else setTimeout(run, 1500);
+  }
+
+  // 拦截顶栏内部导航点击 → 客户端切页
+  realAddEvent.call(document, "click", (e) => {
+    const a = e.target.closest && e.target.closest("a");
+    if (!a) return;
+    const href = a.getAttribute("href");
+    if (!href || !ROUTES.includes(norm(href))) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === "_blank") return;
+    e.preventDefault();
+    navigate(href, true);
+  }, true);
+
+  window.addEventListener("popstate", (e) => {
+    const path = norm((e.state && e.state.path) || location.pathname);
+    if (!ROUTES.includes(path)) return;
+    loadInto(path, false).catch(() => location.reload());
+  });
+
+  // -- 启动 ---------------------------------------------------------------- //
   function boot() {
+    // 建立常驻外壳
+    __pageAbort = new AbortController();   // 首屏页也可在首次切页时作废其在途读取
     mountStatus();
     mountTopbar();
+    updateActiveNav(location.pathname);
+    connectWS();
+    // 创建承载各页内联样式的元素(把首屏页自带的内联 <style> 迁入,便于切页替换)
+    pageStyleEl = document.createElement("style");
+    pageStyleEl.id = "ops-page-style";
+    const moved = [];
+    document.querySelectorAll("head style").forEach((s) => {
+      if (!/html\s*,\s*body\s*\{\s*background:#0a0e1a/.test(s.textContent)) moved.push(s);
+    });
+    pageStyleEl.textContent = moved.map((s) => s.textContent).join("\n");
+    document.head.appendChild(pageStyleEl);
+    moved.forEach((s) => s.remove());
+
+    // 首屏页内容已就位(其脚本已随解析执行并被跟踪),数据就绪后淡入;兜底定时显示
+    clearTimeout(__revealTimer);
+    __revealTimer = setTimeout(revealView, 1500);
+    document.dispatchEvent(new CustomEvent("ops:ready"));   // 首屏页 init
+    prefetchAll();
+
+    // /api/status:状态行 + 只读标记
     Ops.api("/api/status").then(({ ok, data }) => {
       if (ok && data && data.ok) {
         Ops.readonly = !!data.readonly;
@@ -289,14 +378,13 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
           const ind = document.getElementById("ops-ctrl");
           if (ind) { ind.textContent = "只读监控"; ind.className = "ops-ctrl busy"; }
           const role = document.getElementById("ops-role");
-          if (role) { role.disabled = true; role.title = "只读模式不可主控"; role.style.display = "none"; }
+          if (role) { role.disabled = true; role.title = "只读模式不可主控"; }
         }
         const mode = data.provider === "sim" ? "模拟引擎" : "NINA 实机";
         Ops.status(Ops.readonly ? "warn" : "ok",
           `已连接后端 · ${mode}${Ops.readonly ? " · 只读监控" : ""} · `
           + `${data.connected_devices.length}/${data.device_count} 设备在线`);
         window.OPS_BOOT = data;
-        document.dispatchEvent(new CustomEvent("ops:ready", { detail: data }));
       } else {
         Ops.status("err", "后端不可达 —— 请确认 星枢后端服务已启动");
       }
@@ -304,6 +392,6 @@ input.fld:focus,select.fld:focus{outline:none;border-color:var(--gold);}
   }
 
   if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", boot);
+    realAddEvent.call(document, "DOMContentLoaded", boot);
   else boot();
 })();

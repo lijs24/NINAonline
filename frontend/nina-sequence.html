@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 序列</title>
 <style>
   /* 计划全局选项行 */
@@ -53,7 +55,7 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
 
   <!-- ===================== Ⅰ 计划编辑器 ===================== -->
   <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>计划</h2>
@@ -122,7 +124,15 @@
 
   <div class="col-rail" style="margin-top:18px">
     <div>
-      <div id="monitor"></div>
+      <div id="monitor">
+        <div class="kv"><span class="k">状态 <em>status</em></span><span class="v gold" id="mon-status">—</span></div>
+        <div class="kv"><span class="k">当前动作 <em>action</em></span><span class="v" id="mon-action">—</span></div>
+        <div class="kv"><span class="k">当前目标 <em>target</em></span><span class="v cel" id="mon-target">—</span></div>
+        <div class="kv"><span class="k">已完成 <em>frames</em></span><span class="v gold" id="mon-frames">-- / --</span></div>
+        <div class="kv" id="mon-loop-row" style="display:none"><span class="k">轮次 <em>loop</em></span><span class="v" id="mon-loop">--</span></div>
+        <div class="kv" id="mon-rejected-row" style="display:none"><span class="k">废帧 <em>rejected</em></span><span class="v" id="mon-rejected" style="color:var(--err)">--</span></div>
+        <div class="kv"><span class="k">预计剩余 <em>ETA</em></span><span class="v" id="mon-eta">—</span></div>
+      </div>
       <div class="prog"><div id="prog-bar"></div></div>
       <div class="muted" id="prog-text" style="font-size:13px;margin-top:4px"></div>
 
@@ -147,6 +157,9 @@
 <script>
 const FILTERS = ["L","R","G","B","Ha","OIII","SII"];
 const FTYPES  = ["LIGHT","DARK","FLAT","BIAS"];
+
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 
 // ---- 前端内存中的计划对象(编辑器的单一事实来源) -------------------- //
 let plan = defaultPlan();
@@ -406,16 +419,19 @@ async function refresh(){
   // 控件可用性随状态变化
   setRunButtons(s.status);
 
-  // 监视键值区
+  // 监视键值区 —— 原位更新固定槽位文字,不重建 DOM
   const ti = s.current_target_index, tname = (ti>=0 && plan.targets[ti]) ? plan.targets[ti].name : "—";
-  document.getElementById("monitor").innerHTML =
-     `<div class="kv"><span class="k">状态 <em>status</em></span><span class="v gold">${STATUS_ZH[s.status]||s.status}</span></div>`
-    +`<div class="kv"><span class="k">当前动作 <em>action</em></span><span class="v">${esc(s.current_action)||"—"}</span></div>`
-    +`<div class="kv"><span class="k">当前目标 <em>target</em></span><span class="v cel">${esc(tname)}</span></div>`
-    +`<div class="kv"><span class="k">已完成 <em>frames</em></span><span class="v gold">${s.completed_frames} / ${s.total_frames}</span></div>`
-    +((plan.loop_count||1)>1?`<div class="kv"><span class="k">轮次 <em>loop</em></span><span class="v">${s.current_loop} / ${plan.loop_count}</span></div>`:"")
-    +(s.rejected_frames?`<div class="kv"><span class="k">废帧 <em>rejected</em></span><span class="v" style="color:var(--err)">${s.rejected_frames}</span></div>`:"")
-    +`<div class="kv"><span class="k">预计剩余 <em>ETA</em></span><span class="v">${s.running?fmtRemain(s.estimated_remaining_s):"—"}</span></div>`;
+  setT("mon-status", STATUS_ZH[s.status]||s.status);
+  setT("mon-action", s.current_action || "—");
+  setT("mon-target", tname);
+  setT("mon-frames", `${s.completed_frames} / ${s.total_frames}`);
+  const loopOn = (plan.loop_count||1)>1;
+  document.getElementById("mon-loop-row").style.display = loopOn ? "" : "none";
+  if(loopOn) setT("mon-loop", `${s.current_loop} / ${plan.loop_count}`);
+  const rejOn = !!s.rejected_frames;
+  document.getElementById("mon-rejected-row").style.display = rejOn ? "" : "none";
+  if(rejOn) setT("mon-rejected", s.rejected_frames);
+  setT("mon-eta", s.running ? fmtRemain(s.estimated_remaining_s) : "—");
 
   // 进度条(仿 overview progressBar)
   const pct = Math.max(0, Math.min(1, s.progress||0))*100;

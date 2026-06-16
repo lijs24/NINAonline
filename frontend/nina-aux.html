@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 辅助</title>
 <style>
   .ctl{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--hair-soft);flex-wrap:wrap;}
@@ -19,23 +21,56 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <!-- Ⅰ 旋转器 -->
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>旋转器</h2><span class="en">Rotator</span>
         <span id="rot-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="rotator"></div>
+      <div id="rotator">
+        <div id="rot-na" class="na">未连接 —— 到「设备」页连接</div>
+        <div id="rot-body" style="display:none">
+          <div class="kv"><span class="k">天空角 <em>sky</em></span><span class="v gold" id="rot-pos">--</span></div>
+          <div class="kv"><span class="k">机械角 <em>mech</em></span><span class="v" id="rot-mech">--</span></div>
+          <div class="ctl"><label>转到角度</label><input class="fld" id="rot-to" type="number" step="1">
+            <button class="cap" id="rot-move">转动</button><button class="cap" id="rot-sync">同步</button></div>
+        </div>
+      </div>
 
       <!-- Ⅱ 圆顶 -->
       <div class="sec-h"><span class="rn">Ⅱ</span><h2>圆顶</h2><span class="en">Dome</span>
         <span id="dome-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="dome"></div>
+      <div id="dome">
+        <div id="dome-na" class="na">未连接 —— 到「设备」页连接</div>
+        <div id="dome-body" style="display:none">
+          <div class="kv"><span class="k">天窗 <em>shutter</em></span><span class="v" id="dome-shutter">--</span></div>
+          <div class="kv"><span class="k">方位 <em>az</em></span><span class="v" id="dome-az-v">--</span></div>
+          <div class="kv"><span class="k">跟随赤道仪 <em>follow</em></span><span class="v muted" id="dome-follow-v">--</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+            <button class="cap" data-a="open_shutter">开天窗</button><button class="cap" data-a="close_shutter">闭天窗</button>
+            <button class="cap" data-a="park">停靠</button><button class="cap" data-a="find_home">归位</button>
+            <button class="cap danger" data-a="stop">停止</button></div>
+          <div class="ctl"><label>转到方位</label><input class="fld" id="dome-az" type="number" step="1">
+            <button class="cap" id="dome-slew">转向</button>
+            <button class="cap toggle" id="dome-follow">跟随</button></div>
+        </div>
+      </div>
 
       <!-- Ⅲ 平场 -->
       <div class="sec-h"><span class="rn">Ⅲ</span><h2>平场板</h2><span class="en">Flat Panel</span>
         <span id="flat-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="flat"></div>
+      <div id="flat">
+        <div id="flat-na" class="na">未连接 —— 到「设备」页连接</div>
+        <div id="flat-body" style="display:none">
+          <div class="kv"><span class="k">盖板 <em>cover</em></span><span class="v" id="flat-cover">--</span></div>
+          <div class="kv"><span class="k">灯 <em>light</em></span><span class="v muted" id="flat-light-v">--</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+            <button class="cap" data-a="open_cover">开盖</button><button class="cap" data-a="close_cover">合盖</button>
+            <button class="cap toggle" id="flat-light">开灯</button></div>
+          <div class="ctl"><label>亮度 <em class="em" id="flat-bright-label">--/--</em></label>
+            <input type="range" class="grow" id="flat-bright" min="0" max="1" value="0"></div>
+        </div>
+      </div>
 
       <!-- Ⅳ 开关 -->
       <div class="sec-h"><span class="rn">Ⅳ</span><h2>电源开关</h2><span class="en">Switches</span></div>
@@ -45,11 +80,30 @@
     <aside class="rail">
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">天文台条件</h2>
         <span class="en">Conditions</span></div>
-      <div id="conditions"></div>
+      <div id="conditions">
+        <div style="text-align:center;margin:4px 0 10px"><div class="big" id="cond-sun">—</div>
+          <div class="muted" style="font-size:12px" id="cond-twilight">日高度</div></div>
+        <div class="kv"><span class="k">观测安全 <em>safe</em></span><span class="v" id="cond-safe">—</span></div>
+      </div>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">气象</h2><span class="en">Weather</span></div>
-      <div id="weather"></div>
+      <div id="weather">
+        <div id="weather-na" class="na">未连接 —— 到「设备」页连接</div>
+        <div id="weather-body" style="display:none">
+          <div class="kv"><span class="k">气温</span><span class="v" id="w-temp">--</span></div>
+          <div class="kv"><span class="k">湿度</span><span class="v" id="w-humid">--</span></div>
+          <div class="kv"><span class="k">云量 <em>cloud</em></span><span class="v" id="w-cloud">--</span></div>
+          <div class="kv"><span class="k">风速 <em>wind</em></span><span class="v" id="w-wind">--</span></div>
+          <div class="kv"><span class="k">露点 <em>dew</em></span><span class="v" id="w-dew">--</span></div>
+          <div class="kv"><span class="k">天光 <em>SQM</em></span><span class="v" id="w-sqm">--</span></div>
+        </div>
+      </div>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">安全</h2><span class="en">Safety</span></div>
-      <div id="safety"></div>
+      <div id="safety">
+        <div id="safety-na" class="na">未连接 —— 到「设备」页连接</div>
+        <div id="safety-body" style="display:none">
+          <div class="kv"><span class="k">状态</span><span class="v" id="sf-status">--</span></div>
+        </div>
+      </div>
     </aside>
   </div>
 </main>
@@ -57,22 +111,19 @@
 <script src="/nina-theme.js"></script>
 <script>
 const NA = `<div class="na">未连接 —— 到「设备」页连接</div>`;
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
+function show(id, on){ const e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; }
 
 // ---------- 旋转器 ----------
 async function refreshRotator(){
   const r = await Ops.get("/api/rotator");
   document.getElementById("rot-state").textContent = r.connected ? (r.is_moving?"转动中":"静止") : "未连接";
-  const el = document.getElementById("rotator");
-  if(!r.connected){ el.innerHTML = NA; return; }
-  el.innerHTML =
-     `<div class="kv"><span class="k">天空角 <em>sky</em></span><span class="v gold">${r.position.toFixed(1)}°</span></div>`
-    +`<div class="kv"><span class="k">机械角 <em>mech</em></span><span class="v">${r.mechanical_position.toFixed(1)}°</span></div>`
-    +`<div class="ctl"><label>转到角度</label><input class="fld" id="rot-to" type="number" step="1" value="${r.position.toFixed(0)}">`
-      +`<button class="cap" id="rot-move">转动</button><button class="cap" id="rot-sync">同步</button></div>`;
-  document.getElementById("rot-move").onclick = async ()=>{ if(!Ops.requireControl())return;
-    const d=await Ops.action("rotator","move",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","旋转器转动"); };
-  document.getElementById("rot-sync").onclick = async ()=>{ if(!Ops.requireControl())return;
-    const d=await Ops.action("rotator","sync",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","已同步角度"); };
+  show("rot-na", !r.connected); show("rot-body", r.connected);
+  if(!r.connected) return;
+  setT("rot-pos", r.position.toFixed(1) + "°");
+  setT("rot-mech", r.mechanical_position.toFixed(1) + "°");
+  const to = document.getElementById("rot-to");
+  if(document.activeElement !== to) to.value = r.position.toFixed(0);
 }
 
 // ---------- 圆顶 ----------
@@ -80,25 +131,18 @@ const SHUT_ZH={open:"已开",closed:"已闭",opening:"开启中",closing:"关闭
 async function refreshDome(){
   const d = await Ops.get("/api/dome");
   document.getElementById("dome-state").textContent = d.connected ? (d.slewing?"转向中":SHUT_ZH[d.shutter]) : "未连接";
-  const el = document.getElementById("dome");
-  if(!d.connected){ el.innerHTML = NA; return; }
-  el.innerHTML =
-     `<div class="kv"><span class="k">天窗 <em>shutter</em></span><span class="v ${d.shutter==='open'?'gold':''}">${SHUT_ZH[d.shutter]}</span></div>`
-    +`<div class="kv"><span class="k">方位 <em>az</em></span><span class="v">${d.azimuth.toFixed(1)}°${d.slewing?' · 转向中':''}</span></div>`
-    +`<div class="kv"><span class="k">跟随赤道仪 <em>follow</em></span><span class="v ${d.following?'gold':'muted'}">${d.following?'开':'关'}</span></div>`
-    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">`
-      +`<button class="cap" data-a="open_shutter">开天窗</button><button class="cap" data-a="close_shutter">闭天窗</button>`
-      +`<button class="cap" data-a="park">停靠</button><button class="cap" data-a="find_home">归位</button>`
-      +`<button class="cap danger" data-a="stop">停止</button></div>`
-    +`<div class="ctl"><label>转到方位</label><input class="fld" id="dome-az" type="number" step="1" value="${d.azimuth.toFixed(0)}">`
-      +`<button class="cap" id="dome-slew">转向</button>`
-      +`<button class="cap toggle ${d.following?'on':''}" id="dome-follow">跟随</button></div>`;
-  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("dome",b.dataset.a,{}); if(r.ok)Ops.status("ok","圆顶:"+b.textContent); });
-  document.getElementById("dome-slew").onclick = async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("dome","slew",{azimuth:+document.getElementById("dome-az").value}); if(r.ok)Ops.status("ok","圆顶转向"); };
-  document.getElementById("dome-follow").onclick = async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("dome","set_follow",{on:!d.following}); if(r.ok)Ops.status("ok",d.following?"取消跟随":"开启跟随"); };
+  show("dome-na", !d.connected); show("dome-body", d.connected);
+  if(!d.connected) return;
+  const shutterEl = document.getElementById("dome-shutter");
+  shutterEl.textContent = SHUT_ZH[d.shutter];
+  shutterEl.className = "v " + (d.shutter==='open'?'gold':'');
+  setT("dome-az-v", d.azimuth.toFixed(1) + "°" + (d.slewing?' · 转向中':''));
+  const followV = document.getElementById("dome-follow-v");
+  followV.textContent = d.following?'开':'关';
+  followV.className = "v " + (d.following?'gold':'muted');
+  const az = document.getElementById("dome-az");
+  if(document.activeElement !== az) az.value = d.azimuth.toFixed(0);
+  document.getElementById("dome-follow").classList.toggle("on", !!d.following);
 }
 
 // ---------- 平场 ----------
@@ -106,23 +150,19 @@ const COVER_ZH={open:"已开",closed:"已闭",opening:"开启中",closing:"关�
 async function refreshFlat(){
   const f = await Ops.get("/api/flatdevice");
   document.getElementById("flat-state").textContent = f.connected ? (f.light_on?"亮":"灭") : "未连接";
-  const el = document.getElementById("flat");
-  if(!f.connected){ el.innerHTML = NA; return; }
-  el.innerHTML =
-     `<div class="kv"><span class="k">盖板 <em>cover</em></span><span class="v">${COVER_ZH[f.cover]||f.cover}</span></div>`
-    +`<div class="kv"><span class="k">灯 <em>light</em></span><span class="v ${f.light_on?'gold':'muted'}">${f.light_on?'开':'关'}</span></div>`
-    +`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">`
-      +`<button class="cap" data-a="open_cover">开盖</button><button class="cap" data-a="close_cover">合盖</button>`
-      +`<button class="cap toggle ${f.light_on?'on':''}" id="flat-light">${f.light_on?'关灯':'开灯'}</button></div>`
-    +`<div class="ctl"><label>亮度 <em class="em">${f.brightness}/${f.max_brightness}</em></label>`
-      +`<input type="range" class="grow" id="flat-bright" min="0" max="${f.max_brightness}" value="${f.brightness}"></div>`;
-  el.querySelectorAll("[data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("flatdevice",b.dataset.a,{}); if(r.ok)Ops.status("ok","平场:"+b.textContent); });
-  document.getElementById("flat-light").onclick = async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("flatdevice","set_light",{on:!f.light_on}); if(r.ok)Ops.status("ok",f.light_on?"关灯":"开灯"); };
+  show("flat-na", !f.connected); show("flat-body", f.connected);
+  if(!f.connected) return;
+  setT("flat-cover", COVER_ZH[f.cover]||f.cover);
+  const lightV = document.getElementById("flat-light-v");
+  lightV.textContent = f.light_on?'开':'关';
+  lightV.className = "v " + (f.light_on?'gold':'muted');
+  const lightBtn = document.getElementById("flat-light");
+  lightBtn.textContent = f.light_on?'关灯':'开灯';
+  lightBtn.classList.toggle("on", !!f.light_on);
+  setT("flat-bright-label", f.brightness + "/" + f.max_brightness);
   const sl = document.getElementById("flat-bright");
-  sl.onchange = async ()=>{ if(!Ops.requireControl())return;
-    const r=await Ops.action("flatdevice","set_brightness",{brightness:+sl.value}); if(r.ok)Ops.status("ok","平场亮度 "+sl.value); };
+  sl.max = f.max_brightness;
+  if(document.activeElement !== sl) sl.value = f.brightness;
 }
 
 // ---------- 开关 ----------
@@ -148,25 +188,56 @@ async function refreshSwitch(){
 // ---------- 右栏:条件 / 气象 / 安全 ----------
 async function refreshRail(){
   const c = await Ops.get("/api/conditions");
-  document.getElementById("conditions").innerHTML =
-     `<div style="text-align:center;margin:4px 0 10px"><div class="big">${c.sun_altitude==null?'—':c.sun_altitude+'°'}</div>`
-      +`<div class="muted" style="font-size:12px">日高度 · ${c.twilight||''}</div></div>`
-    +`<div class="kv"><span class="k">观测安全 <em>safe</em></span><span class="v ${c.is_safe?'gold':''}" `
-      +`style="${c.is_safe===false?'color:var(--err)':''}">${c.is_safe==null?'—':(c.is_safe?'安全':'不安全')}</span></div>`;
+  setT("cond-sun", c.sun_altitude==null?'—':c.sun_altitude+'°');
+  setT("cond-twilight", "日高度 · " + (c.twilight||''));
+  const safeEl = document.getElementById("cond-safe");
+  safeEl.textContent = c.is_safe==null?'—':(c.is_safe?'安全':'不安全');
+  safeEl.className = "v " + (c.is_safe?'gold':'');
+  safeEl.style.color = c.is_safe===false ? 'var(--err)' : '';
 
   const w = await Ops.get("/api/weather");
-  document.getElementById("weather").innerHTML = w.connected ?
-     `<div class="kv"><span class="k">气温</span><span class="v">${w.temperature.toFixed(1)}°C</span></div>`
-    +`<div class="kv"><span class="k">湿度</span><span class="v">${w.humidity.toFixed(0)}%</span></div>`
-    +`<div class="kv"><span class="k">云量 <em>cloud</em></span><span class="v">${w.cloud_cover.toFixed(0)}%</span></div>`
-    +`<div class="kv"><span class="k">风速 <em>wind</em></span><span class="v">${w.wind_speed.toFixed(1)} m/s</span></div>`
-    +`<div class="kv"><span class="k">露点 <em>dew</em></span><span class="v">${w.dew_point.toFixed(1)}°C</span></div>`
-    +`<div class="kv"><span class="k">天光 <em>SQM</em></span><span class="v">${w.sky_quality.toFixed(1)}</span></div>` : NA;
+  show("weather-na", !w.connected); show("weather-body", w.connected);
+  if(w.connected){
+    setT("w-temp", w.temperature.toFixed(1) + "°C");
+    setT("w-humid", w.humidity.toFixed(0) + "%");
+    setT("w-cloud", w.cloud_cover.toFixed(0) + "%");
+    setT("w-wind", w.wind_speed.toFixed(1) + " m/s");
+    setT("w-dew", w.dew_point.toFixed(1) + "°C");
+    setT("w-sqm", w.sky_quality.toFixed(1));
+  }
 
   const sf = await Ops.get("/api/safety");
-  document.getElementById("safety").innerHTML = sf.connected ?
-    `<div class="kv"><span class="k">状态</span><span class="v ${sf.is_safe?'gold':''}" style="${sf.is_safe?'':'color:var(--err)'}">${sf.is_safe?'安全 · 可观测':'不安全'}</span></div>` : NA;
+  show("safety-na", !sf.connected); show("safety-body", sf.connected);
+  if(sf.connected){
+    const sfEl = document.getElementById("sf-status");
+    sfEl.textContent = sf.is_safe?'安全 · 可观测':'不安全';
+    sfEl.className = "v " + (sf.is_safe?'gold':'');
+    sfEl.style.color = sf.is_safe?'':'var(--err)';
+  }
 }
+
+// ---------- 一次性事件绑定(静态元素) ----------
+document.getElementById("rot-move").onclick = async ()=>{ if(!Ops.requireControl())return;
+  const d=await Ops.action("rotator","move",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","旋转器转动"); };
+document.getElementById("rot-sync").onclick = async ()=>{ if(!Ops.requireControl())return;
+  const d=await Ops.action("rotator","sync",{position:+document.getElementById("rot-to").value}); if(d.ok)Ops.status("ok","已同步角度"); };
+
+document.querySelectorAll("#dome-body [data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
+  const r=await Ops.action("dome",b.dataset.a,{}); if(r.ok)Ops.status("ok","圆顶:"+b.textContent); });
+document.getElementById("dome-slew").onclick = async ()=>{ if(!Ops.requireControl())return;
+  const r=await Ops.action("dome","slew",{azimuth:+document.getElementById("dome-az").value}); if(r.ok)Ops.status("ok","圆顶转向"); };
+document.getElementById("dome-follow").onclick = async ()=>{ if(!Ops.requireControl())return;
+  const d=await Ops.get("/api/dome");
+  const r=await Ops.action("dome","set_follow",{on:!d.following}); if(r.ok)Ops.status("ok",d.following?"取消跟随":"开启跟随"); };
+
+document.querySelectorAll("#flat-body [data-a]").forEach(b=>b.onclick=async ()=>{ if(!Ops.requireControl())return;
+  const r=await Ops.action("flatdevice",b.dataset.a,{}); if(r.ok)Ops.status("ok","平场:"+b.textContent); });
+document.getElementById("flat-light").onclick = async ()=>{ if(!Ops.requireControl())return;
+  const f=await Ops.get("/api/flatdevice");
+  const r=await Ops.action("flatdevice","set_light",{on:!f.light_on}); if(r.ok)Ops.status("ok",f.light_on?"关灯":"开灯"); };
+document.getElementById("flat-bright").onchange = async ()=>{ if(!Ops.requireControl())return;
+  const sl=document.getElementById("flat-bright");
+  const r=await Ops.action("flatdevice","set_brightness",{brightness:+sl.value}); if(r.ok)Ops.status("ok","平场亮度 "+sl.value); };
 
 function refreshAll(){ refreshRotator(); refreshDome(); refreshFlat(); refreshSwitch(); refreshRail(); }
 document.addEventListener("ops:ready", refreshAll);

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 导星</title>
 <style>
   #graph{width:100%;height:340px;display:block;border:1px solid var(--hair);background:var(--sky-2);}
@@ -15,11 +17,12 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>导星曲线</h2>
         <span class="en">Guide Graph</span><span id="g-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
+      <div id="g-nc" class="muted em" style="display:none">「导星相机」未连接 —— 请到「设备」页连接</div>
       <div id="main">
         <canvas id="graph" width="900" height="340"></canvas>
         <div class="legend">
@@ -41,7 +44,15 @@
 
     <aside class="rail">
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">状态</h2></div>
-      <div id="info"></div>
+      <div id="info">
+        <div class="kv"><span class="k">状态 <em>state</em></span><span class="v gold" id="g-info-state">—</span></div>
+        <div class="kv"><span class="k">稳定中 <em>settling</em></span><span class="v" id="g-info-settling">—</span></div>
+        <div class="kv"><span class="k">RMS 赤经 <em>RA ″</em></span><span class="v" id="g-info-rms-ra">--</span></div>
+        <div class="kv"><span class="k">RMS 赤纬 <em>Dec ″</em></span><span class="v" id="g-info-rms-dec">--</span></div>
+        <div class="kv"><span class="k">RMS 合计 <em>total ″</em></span><span class="v gold" id="g-info-rms-total">--</span></div>
+        <div class="kv"><span class="k">像元比例 <em>″/px</em></span><span class="v" id="g-info-pixscale">--</span></div>
+        <div class="kv"><span class="k">导星器 <em>name</em></span><span class="v" id="g-info-name">—</span></div>
+      </div>
     </aside>
   </div>
 </main>
@@ -54,6 +65,9 @@ const SPAN = 4;   // 纵轴角秒 ±剧情范围
 
 document.getElementById("g-span").textContent = SPAN;
 
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
+
 async function refresh(){
   const g = await Ops.get("/api/guider");
   lastState = g.state;
@@ -64,28 +78,18 @@ async function refresh(){
 
   const main = document.getElementById("main");
   main.style.display = g.connected ? "" : "none";
+  document.getElementById("g-nc").style.display = g.connected ? "none" : "block";
+  document.getElementById("info").style.display = g.connected ? "" : "none";
 
-  if(!g.connected){
-    if(!document.getElementById("g-nc")){
-      const d = document.createElement("div");
-      d.id = "g-nc"; d.className = "muted em";
-      d.textContent = "「导星相机」未连接 —— 请到「设备」页连接";
-      main.parentNode.insertBefore(d, main.nextSibling);
-    }
-    document.getElementById("info").innerHTML =
-      `<div class="muted em">导星未连接</div>`;
-    return;
-  }
-  const nc = document.getElementById("g-nc"); if(nc) nc.remove();
+  if(!g.connected) return;
 
-  document.getElementById("info").innerHTML =
-     `<div class="kv"><span class="k">状态 <em>state</em></span><span class="v gold">${STATE_CN[g.state]||g.state}</span></div>`
-    +`<div class="kv"><span class="k">稳定中 <em>settling</em></span><span class="v">${g.settling?"是":"否"}</span></div>`
-    +`<div class="kv"><span class="k">RMS 赤经 <em>RA ″</em></span><span class="v">${g.rms_ra.toFixed(2)}</span></div>`
-    +`<div class="kv"><span class="k">RMS 赤纬 <em>Dec ″</em></span><span class="v">${g.rms_dec.toFixed(2)}</span></div>`
-    +`<div class="kv"><span class="k">RMS 合计 <em>total ″</em></span><span class="v gold">${g.rms_total.toFixed(2)}</span></div>`
-    +`<div class="kv"><span class="k">像元比例 <em>″/px</em></span><span class="v">${g.pixel_scale.toFixed(2)}</span></div>`
-    +`<div class="kv"><span class="k">导星器 <em>name</em></span><span class="v">${g.name||"—"}</span></div>`;
+  setT("g-info-state", STATE_CN[g.state]||g.state);
+  setT("g-info-settling", g.settling?"是":"否");
+  setT("g-info-rms-ra", g.rms_ra.toFixed(2));
+  setT("g-info-rms-dec", g.rms_dec.toFixed(2));
+  setT("g-info-rms-total", g.rms_total.toFixed(2));
+  setT("g-info-pixscale", g.pixel_scale.toFixed(2));
+  setT("g-info-name", g.name||"—");
 
   syncButtons(g);
 }

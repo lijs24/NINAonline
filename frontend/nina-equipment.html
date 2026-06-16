@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 设备</title>
 <style>
   .eq{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--hair-soft);}
@@ -16,11 +18,79 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>设备连接</h2>
     <span class="en">Equipment Connection</span>
     <span style="margin-left:auto"><button class="cap" id="btn-all-on">一键连接全部</button></span></div>
-  <div id="eq-list"></div>
+  <!-- 11 个设备行写死成静态结构(切页首帧即在),JS 只填 option / 更新 info 与按钮状态 -->
+  <div id="eq-list">
+    <div class="eq" data-type="camera">
+      <div class="name"><b>相机</b><em>Camera</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="mount">
+      <div class="name"><b>赤道仪</b><em>Mount</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="focuser">
+      <div class="name"><b>对焦</b><em>Focuser</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="filterwheel">
+      <div class="name"><b>滤镜轮</b><em>FilterWheel</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="guider">
+      <div class="name"><b>导星</b><em>Guider</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="rotator">
+      <div class="name"><b>旋转器</b><em>Rotator</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="dome">
+      <div class="name"><b>圆顶</b><em>Dome</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="flatdevice">
+      <div class="name"><b>平场</b><em>Flat</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="switch">
+      <div class="name"><b>开关</b><em>Switch</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="weather">
+      <div class="name"><b>气象</b><em>Weather</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+    <div class="eq" data-type="safetymonitor">
+      <div class="name"><b>安全</b><em>Safety</em></div>
+      <select class="fld driver" disabled><option>检测中…</option></select>
+      <div class="info muted">检测中…</div>
+      <div class="act"><button class="cap btn-conn" disabled>连接</button>
+      <button class="cap btn-disc" disabled>断开</button></div></div>
+  </div>
   <p class="muted em" style="margin-top:24px;font-size:13px">
     模拟模式下所有设备均有内置「模拟驱动」,连接后即可在各页操作;
     切到真机(provider=live)后,此处列出 NINA 提供的 ASCOM/Alpaca/原生驱动。</p>
@@ -35,58 +105,65 @@ const DEVS = [
   ["weather","气象","Weather"],["safetymonitor","安全","Safety"],
 ];
 
-function row(type,zh,en){
-  return `<div class="eq" data-type="${type}">
-    <div class="name"><b>${zh}</b><em>${en}</em></div>
-    <select class="fld driver"></select>
-    <div class="info">—</div>
-    <div class="act">
-      <button class="cap btn-conn">连接</button>
-      <button class="cap btn-disc" disabled>断开</button>
-    </div></div>`;
+// 只渲染后端给的数据,所有聚合都在后端 /api/equipment 完成
+function applyStatus(el, d){
+  const info = el.querySelector(".info");
+  info.classList.remove("muted");
+  // info 含「圆点 + 名称/未连接」复合标记 —— 保留 innerHTML(字段含可变名称与样式片段)
+  info.innerHTML = d.connected
+    ? `<span class="dot on"></span> <span style="color:var(--gold)">${d.name}</span>`
+      + (d.detail?` · ${d.detail}`:"")
+    : `<span class="dot"></span> 未连接`;
+  el.querySelector(".btn-conn").disabled = !!d.connected;
+  el.querySelector(".btn-disc").disabled = !d.connected;
+  const sel = el.querySelector(".driver");
+  sel.disabled = !!d.connected;
+  if(d.connected){
+    let opt = d.driver_id ? [...sel.options].find(o=>o.value===d.driver_id) : null;
+    if(!opt && d.name) opt = [...sel.options].find(o=>o.textContent.startsWith(d.name));
+    if(opt) sel.value = opt.value;
+  }
 }
 
-async function loadDrivers(type, sel){
-  const d = await Ops.get(`/api/equipment/${type}/list`);
-  sel.innerHTML = (d.drivers||[]).map(dr=>`<option value="${dr.id}">${dr.name} · ${dr.category}</option>`).join("")
+// 首屏:用聚合数据填好下拉 + 状态(一次成型)
+function applyDevice(el, d){
+  el.querySelector(".driver").innerHTML =
+    (d.drivers||[]).map(dr=>`<option value="${dr.id}">${dr.name} · ${dr.category}</option>`).join("")
     || `<option value="">无可用驱动</option>`;
+  applyStatus(el, d);
 }
 
+// 轮询:只更新状态(下拉已就绪,无需重拉驱动列表)
 async function refresh(){
   const d = await Ops.get("/api/devices");
   const byType = Object.fromEntries((d.devices||[]).map(x=>[x.type,x]));
-  document.querySelectorAll(".eq").forEach(el=>{
-    const t = el.dataset.type, st = byType[t]||{};
-    el.querySelector(".info").innerHTML = st.connected
-      ? `<span class="dot on"></span> <span style="color:var(--gold)">${st.name}</span>`
-        + (st.detail?` · ${st.detail}`:"")
-      : `<span class="dot"></span> 未连接`;
-    el.querySelector(".btn-conn").disabled = st.connected;
-    el.querySelector(".btn-disc").disabled = !st.connected;
-    el.querySelector(".driver").disabled = st.connected;
-  });
+  document.querySelectorAll(".eq").forEach(el=>{ const st=byType[el.dataset.type]; if(st) applyStatus(el, st); });
 }
 
+function bindRow(el){
+  const t = el.dataset.type;
+  el.querySelector(".btn-conn").onclick = async ()=>{
+    if(!Ops.requireControl()) return;
+    const drv = el.querySelector(".driver").value;
+    const d = await Ops.post(`/api/equipment/${t}/connect`, {driver_id:drv});
+    if(d.ok){ Ops.status("ok",`已连接 ${d.name||t}`); refresh(); }
+    else if(!d.locked) Ops.status("err",d.error||"连接失败");
+  };
+  el.querySelector(".btn-disc").onclick = async ()=>{
+    if(!Ops.requireControl()) return;
+    const d = await Ops.post(`/api/equipment/${t}/disconnect`, {});
+    if(d.ok){ Ops.status("warn",`已断开 ${t}`); refresh(); }
+  };
+}
+
+// 设备行结构已在静态 HTML 中,直接绑定;只填 option / 更新文字与状态,不再 innerHTML 重建整列表
+document.querySelectorAll(".eq").forEach(bindRow);
+
 document.addEventListener("ops:ready", async ()=>{
-  const host = document.getElementById("eq-list");
-  host.innerHTML = DEVS.map(([t,zh,en])=>row(t,zh,en)).join("");
-  for(const el of document.querySelectorAll(".eq")){
-    const t = el.dataset.type;
-    await loadDrivers(t, el.querySelector(".driver"));
-    el.querySelector(".btn-conn").onclick = async ()=>{
-      if(!Ops.requireControl()) return;
-      const drv = el.querySelector(".driver").value;
-      const d = await Ops.post(`/api/equipment/${t}/connect`, {driver_id:drv});
-      if(d.ok){ Ops.status("ok",`已连接 ${d.name||t}`); refresh(); }
-      else if(!d.locked) Ops.status("err",d.error||"连接失败");
-    };
-    el.querySelector(".btn-disc").onclick = async ()=>{
-      if(!Ops.requireControl()) return;
-      const d = await Ops.post(`/api/equipment/${t}/disconnect`, {});
-      if(d.ok){ Ops.status("warn",`已断开 ${t}`); refresh(); }
-    };
-  }
-  refresh();
+  // 一次调用拿齐"状态 + 驱动列表"(后端已聚合),原位填入静态行
+  const d = await Ops.get("/api/equipment");
+  const byType = Object.fromEntries((d.devices||[]).map(x=>[x.type,x]));
+  document.querySelectorAll(".eq").forEach(el=>{ const dd=byType[el.dataset.type]; if(dd) applyDevice(el, dd); });
 });
 
 document.getElementById("btn-all-on").onclick = async ()=>{

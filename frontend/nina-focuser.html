@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 对焦</title>
 <style>
   .big{font-size:46px;line-height:1.1;color:var(--gold);font-variant-numeric:tabular-nums;}
@@ -18,12 +20,20 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>调焦座</h2>
         <span class="en">Focuser</span><span id="f-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="main"></div>
+      <div id="main">
+        <div class="kv"><span class="k">当前位置 <em>position</em></span></div>
+        <div class="big"><span id="f-position">--</span><span class="unit">步 / <span id="f-maxstep">--</span></span></div>
+        <div class="kv" style="margin-top:14px"><span class="k">温度 <em>temp</em></span><span class="v gold" id="f-temp">--</span></div>
+        <div class="kv"><span class="k">步长 <em>step</em></span><span class="v" id="f-stepsize">--</span></div>
+        <div class="kv"><span class="k">运动 <em>moving</em></span><span class="v" id="f-moving">--</span></div>
+        <div class="kv"><span class="k">设备 <em>name</em></span><span class="v" id="f-name">—</span></div>
+      </div>
+      <div id="main-notice" class="muted em" style="display:none">「调焦座」未连接 —— 请到「设备」页连接</div>
 
       <div id="ctl" style="display:none">
         <div class="sec-h"><span class="rn">Ⅱ</span><h2>移动</h2><span class="en">Move</span></div>
@@ -54,15 +64,28 @@
 
     <aside class="rail">
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">温度补偿</h2></div>
-      <div id="tempcomp"></div>
+      <div id="tempcomp">
+        <div id="tc-row" class="kv" style="display:none"><span class="k">补偿 <em>temp comp</em></span><span class="v" id="tc-val">—</span></div>
+        <div id="tc-ctl" class="row" style="display:none"><button class="cap" id="btn-tc">开启温度补偿</button></div>
+        <div id="tc-none" class="muted em" style="display:none">该调焦座无温度补偿</div>
+      </div>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">对焦结果</h2></div>
-      <div id="af-result"></div>
+      <div id="af-result">
+        <div class="kv"><span class="k">最佳位置 <em>best pos</em></span><span class="v gold" id="af-bestpos">—</span></div>
+        <div class="kv"><span class="k">最佳 HFR <em>best hfr</em></span><span class="v gold" id="af-besthfr">—</span></div>
+        <div class="kv"><span class="k">拟合优度 <em>R²</em></span><span class="v" id="af-r2">—</span></div>
+        <div class="kv"><span class="k">采样点 <em>points</em></span><span class="v" id="af-points">--</span></div>
+        <div class="kv"><span class="k">完成于 <em>finished</em></span><span class="v" id="af-finished">—</span></div>
+        <div id="af-error" class="muted em" style="margin-top:8px;display:none"></div>
+      </div>
     </aside>
   </div>
 </main>
 
 <script src="/nina-theme.js"></script>
 <script>
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 const C_GOLD = "#c9a227", C_CEL = "#9db4d0", C_HAIR = "rgba(139,145,165,.28)", C_DIM = "#8b91a5";
 let lastAF = null;
 
@@ -72,25 +95,44 @@ async function refresh(){
     : f.is_moving ? "移动中" : f.af_running ? "对焦中" : "就绪";
   document.getElementById("ctl").style.display = f.connected ? "" : "none";
 
-  document.getElementById("main").innerHTML = f.connected ?
-     `<div class="kv"><span class="k">当前位置 <em>position</em></span></div>`
-    +`<div class="big">${f.position}<span class="unit">步 / ${f.max_step}</span></div>`
-    +`<div class="kv" style="margin-top:14px"><span class="k">温度 <em>temp</em></span><span class="v gold">${f.temperature.toFixed(1)}°C</span></div>`
-    +`<div class="kv"><span class="k">步长 <em>step</em></span><span class="v">${f.step_size_um} µm</span></div>`
-    +`<div class="kv"><span class="k">运动 <em>moving</em></span><span class="v">${f.is_moving?'是':'否'}</span></div>`
-    +`<div class="kv"><span class="k">设备 <em>name</em></span><span class="v">${f.name||'—'}</span></div>`
-    : `<div class="muted em">「调焦座」未连接 —— 请到「设备」页连接</div>`;
+  document.getElementById("main").style.display = f.connected ? "" : "none";
+  document.getElementById("main-notice").style.display = f.connected ? "none" : "block";
+  if (f.connected) {
+    setT("f-position", f.position);
+    setT("f-maxstep", f.max_step);
+    setT("f-temp", f.temperature.toFixed(1) + "°C");
+    setT("f-stepsize", f.step_size_um + " µm");
+    setT("f-moving", f.is_moving ? "是" : "否");
+    setT("f-name", f.name || "—");
+  }
 
-  document.getElementById("tempcomp").innerHTML = f.connected ? (f.temp_comp_available ?
-     `<div class="kv"><span class="k">补偿 <em>temp comp</em></span><span class="v ${f.temp_comp?'gold':''}">${f.temp_comp?'开':'关'}</span></div>`
-    +`<div class="row"><button class="cap ${f.temp_comp?'solid':''}" id="btn-tc">${f.temp_comp?'关闭温度补偿':'开启温度补偿'}</button></div>`
-    : `<div class="muted em">该调焦座无温度补偿</div>`) : "";
-  const tc = document.getElementById("btn-tc");
-  if(tc) tc.onclick = async ()=>{
-    if(!Ops.requireControl()) return;
-    const d = await Ops.action("focuser","set_tempcomp",{on:!f.temp_comp});
-    if(d.ok){ Ops.status("ok", f.temp_comp?"已关闭温度补偿":"已开启温度补偿"); refresh(); }
-  };
+  const tcRow = document.getElementById("tc-row");
+  const tcCtl = document.getElementById("tc-ctl");
+  const tcNone = document.getElementById("tc-none");
+  if (f.connected && f.temp_comp_available) {
+    tcRow.style.display = "";
+    tcCtl.style.display = "";
+    tcNone.style.display = "none";
+    const tcVal = document.getElementById("tc-val");
+    tcVal.textContent = f.temp_comp ? "开" : "关";
+    tcVal.classList.toggle("gold", !!f.temp_comp);
+    const tc = document.getElementById("btn-tc");
+    tc.textContent = f.temp_comp ? "关闭温度补偿" : "开启温度补偿";
+    tc.classList.toggle("solid", !!f.temp_comp);
+    tc.onclick = async ()=>{
+      if(!Ops.requireControl()) return;
+      const d = await Ops.action("focuser","set_tempcomp",{on:!f.temp_comp});
+      if(d.ok){ Ops.status("ok", f.temp_comp?"已关闭温度补偿":"已开启温度补偿"); refresh(); }
+    };
+  } else if (f.connected) {
+    tcRow.style.display = "none";
+    tcCtl.style.display = "none";
+    tcNone.style.display = "block";
+  } else {
+    tcRow.style.display = "none";
+    tcCtl.style.display = "none";
+    tcNone.style.display = "none";
+  }
 
   document.getElementById("af-state").textContent = f.af_running ? "运行中" : "";
 }
@@ -100,13 +142,14 @@ async function refreshAF(){
   lastAF = af;
   drawCurve(af);
   const fin = af.finished_at ? af.finished_at.replace("T"," ").slice(0,19) : "—";
-  document.getElementById("af-result").innerHTML =
-     `<div class="kv"><span class="k">最佳位置 <em>best pos</em></span><span class="v gold">${af.best_position!=null?af.best_position:'—'}</span></div>`
-    +`<div class="kv"><span class="k">最佳 HFR <em>best hfr</em></span><span class="v gold">${af.best_hfr!=null?af.best_hfr.toFixed(2):'—'}</span></div>`
-    +`<div class="kv"><span class="k">拟合优度 <em>R²</em></span><span class="v">${af.r_squared!=null?af.r_squared.toFixed(3):'—'}</span></div>`
-    +`<div class="kv"><span class="k">采样点 <em>points</em></span><span class="v">${(af.points||[]).length}</span></div>`
-    +`<div class="kv"><span class="k">完成于 <em>finished</em></span><span class="v">${fin}</span></div>`
-    +(af.error?`<div class="muted em" style="margin-top:8px">${af.error}</div>`:"");
+  setT("af-bestpos", af.best_position!=null ? af.best_position : "—");
+  setT("af-besthfr", af.best_hfr!=null ? af.best_hfr.toFixed(2) : "—");
+  setT("af-r2", af.r_squared!=null ? af.r_squared.toFixed(3) : "—");
+  setT("af-points", (af.points||[]).length);
+  setT("af-finished", fin);
+  const errEl = document.getElementById("af-error");
+  if (af.error) { errEl.textContent = af.error; errEl.style.display = "block"; }
+  else { errEl.textContent = ""; errEl.style.display = "none"; }
 }
 
 function drawCurve(af){

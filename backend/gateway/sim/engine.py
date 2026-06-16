@@ -229,6 +229,7 @@ class SimGateway(NinaGateway):
             st = self._state(t)
             out.append(m.DeviceSummary(
                 type=t, connected=st.connected, name=st.name,
+                driver_id=(f"sim.{t}" if st.connected else ""),
                 state=self._device_state_text(t), detail=self._device_detail(t)))
         return out
 

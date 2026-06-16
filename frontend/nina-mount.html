@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 赤道仪</title>
 <style>
   .pad{display:grid;grid-template-columns:repeat(3,52px);gap:8px;justify-content:center;margin:8px 0;}
@@ -16,12 +18,21 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>指向</h2>
-        <span class="en">Pointing</span><span id="m-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="pos"></div>
+        <span class="en">Pointing</span><span id="m-state" class="muted" style="margin-left:auto;font-size:13px">检测中…</span></div>
+      <div id="pos">
+        <div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel" id="m-ra">--</span></div>
+        <div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel" id="m-dec">--</span></div>
+        <div class="kv"><span class="k">高度 <em>Alt</em></span><span class="v" id="m-alt">--</span></div>
+        <div class="kv"><span class="k">方位 <em>Az</em></span><span class="v" id="m-az">--</span></div>
+        <div class="kv"><span class="k">恒星时 <em>LST</em></span><span class="v" id="m-lst">--</span></div>
+        <div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold" id="m-target">—</span></div>
+      </div>
+      <div id="pos-notice" class="muted em" style="font-size:13px;margin-top:6px;display:none">
+        赤道仪未连接 —— 请到「设备」页连接</div>
 
       <div class="sec-h"><span class="rn">Ⅱ</span><h2>目标 · 转向</h2><span class="en">GoTo</span></div>
       <div style="display:flex;gap:10px;margin-bottom:8px">
@@ -54,31 +65,38 @@
         <button class="cap" id="btn-flip">子午翻转</button>
       </div>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">天象</h2></div>
-      <div id="sky"></div>
+      <div id="sky">
+        <div class="kv"><span class="k">中天 <em>meridian</em></span><span class="v" id="m-meridian">--</span></div>
+        <div class="kv"><span class="k">天球侧 <em>pier</em></span><span class="v" id="m-pier">--</span></div>
+        <div class="kv"><span class="k">跟踪模式</span><span class="v" id="m-trackmode">--</span></div>
+      </div>
     </aside>
   </div>
 </main>
 
 <script src="/nina-theme.js"></script>
 <script>
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 async function refresh(){
   const m = await Ops.get("/api/mount");
-  document.getElementById("m-state").textContent = !m.connected ? "未连接"
-    : m.slewing?"转向中":(m.tracking?"跟踪中":"静止")+(m.at_park?" · 已停靠":"");
-  document.getElementById("pos").innerHTML = m.connected ?
-     `<div class="kv"><span class="k">赤经 <em>RA</em></span><span class="v cel">${Ops.fmtRA(m.ra_hours)}</span></div>`
-    +`<div class="kv"><span class="k">赤纬 <em>Dec</em></span><span class="v cel">${Ops.fmtDec(m.dec_degrees)}</span></div>`
-    +`<div class="kv"><span class="k">高度 <em>Alt</em></span><span class="v">${m.altitude.toFixed(2)}°</span></div>`
-    +`<div class="kv"><span class="k">方位 <em>Az</em></span><span class="v">${m.azimuth.toFixed(2)}°</span></div>`
-    +`<div class="kv"><span class="k">恒星时 <em>LST</em></span><span class="v">${m.lst_text}</span></div>`
-    +`<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${m.target_name||'—'}</span></div>`
-    : `<div class="muted em">赤道仪未连接 —— 请到「设备」页连接</div>`;
-  document.getElementById("sky").innerHTML = m.connected ?
-     `<div class="kv"><span class="k">中天 <em>meridian</em></span><span class="v">`
-      +`${m.time_to_meridian_h>0?'还有 '+m.time_to_meridian_h.toFixed(2)+'ʰ':'已过 '+Math.abs(m.time_to_meridian_h).toFixed(2)+'ʰ'}</span></div>`
-    +`<div class="kv"><span class="k">天球侧 <em>pier</em></span><span class="v">${({east:'东',west:'西',unknown:'未知'})[m.side_of_pier]}</span></div>`
-    +`<div class="kv"><span class="k">跟踪模式</span><span class="v">${m.tracking?m.tracking_mode:'停'}</span></div>` : "";
-  document.getElementById("btn-track").classList.toggle("solid", m.tracking);
+  setT("m-state", !m.connected ? "未连接"
+    : (m.slewing ? "转向中" : (m.tracking ? "跟踪中" : "静止")) + (m.at_park ? " · 已停靠" : ""));
+  document.getElementById("pos-notice").style.display = m.connected ? "none" : "block";
+  if (m.connected) {
+    setT("m-ra", Ops.fmtRA(m.ra_hours));
+    setT("m-dec", Ops.fmtDec(m.dec_degrees));
+    setT("m-alt", m.altitude.toFixed(2) + "°");
+    setT("m-az", m.azimuth.toFixed(2) + "°");
+    setT("m-lst", m.lst_text);
+    setT("m-target", m.target_name || "—");
+    setT("m-meridian", m.time_to_meridian_h > 0
+      ? "还有 " + m.time_to_meridian_h.toFixed(2) + "ʰ"
+      : "已过 " + Math.abs(m.time_to_meridian_h).toFixed(2) + "ʰ");
+    setT("m-pier", ({ east: "东", west: "西", unknown: "未知" })[m.side_of_pier]);
+    setT("m-trackmode", m.tracking ? m.tracking_mode : "停");
+  }
+  document.getElementById("btn-track").classList.toggle("solid", !!m.tracking);
 }
 
 document.getElementById("btn-search").onclick = doSearch;

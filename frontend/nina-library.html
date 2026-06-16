@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 图库</title>
 <style>
   #big{width:100%;border:1px solid var(--hair);background:var(--sky-2);min-height:320px;
@@ -22,13 +24,18 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="col-rail">
     <!-- 左主区:大图 + 过滤 + 网格 -->
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅰ</span><h2>概览</h2>
         <span class="en">Overview</span><span id="lib-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
-      <div id="summary"></div>
+      <div id="summary">
+        <div class="kv"><span class="k">总帧数 <em>frames</em></span><span class="v gold" id="s-total">--</span></div>
+        <div class="kv"><span class="k">总积分 <em>integration</em></span><span class="v gold" id="s-integration">--</span></div>
+        <div id="s-by-filter"></div>
+        <div id="s-by-target"></div>
+      </div>
 
       <div class="sec-h"><span class="rn">Ⅱ</span><h2>影像</h2><span class="en">Frames</span></div>
       <div class="filters">
@@ -47,13 +54,29 @@
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">细览</h2>
         <span class="en">Detail</span></div>
       <img id="big" alt="选中影像" style="display:none">
-      <div id="meta" class="muted em" style="margin-top:12px">点选下方影像查看细节</div>
+      <div id="meta-empty" class="muted em" style="margin-top:12px">点选下方影像查看细节</div>
+      <div id="meta" style="margin-top:12px;display:none">
+        <div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold" id="d-target">—</span></div>
+        <div class="kv"><span class="k">滤镜 <em>filter</em></span><span class="v" id="d-filter">—</span></div>
+        <div class="kv"><span class="k">曝光 <em>exposure</em></span><span class="v" id="d-exposure">--</span></div>
+        <div class="kv"><span class="k">增益 <em>gain</em></span><span class="v" id="d-gain">--</span></div>
+        <div class="kv"><span class="k">偏置 <em>offset</em></span><span class="v" id="d-offset">--</span></div>
+        <div class="kv"><span class="k">合并 <em>bin</em></span><span class="v" id="d-bin">--</span></div>
+        <div class="kv"><span class="k">HFR</span><span class="v gold" id="d-hfr">--</span></div>
+        <div class="kv"><span class="k">星数 <em>stars</em></span><span class="v" id="d-stars">--</span></div>
+        <div class="kv"><span class="k">温度 <em>°C</em></span><span class="v cel" id="d-temperature">--</span></div>
+        <div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v" id="d-size">--</span></div>
+        <div class="kv"><span class="k">均值 <em>mean</em></span><span class="v" id="d-mean">--</span></div>
+        <div class="kv"><span class="k">时间 <em>captured</em></span><span class="v" id="d-captured">—</span></div>
+      </div>
     </aside>
   </div>
 </main>
 
 <script src="/nina-theme.js"></script>
 <script>
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 let selId = null;
 
 function fmtInteg(sec){
@@ -69,20 +92,20 @@ async function refreshSummary(){
   document.getElementById("lib-state").textContent =
     s.total ? `${s.total} 帧` : "空库";
   const byFilter = s.by_filter || {}, byTarget = s.by_target || {};
-  let html =
-     `<div class="kv"><span class="k">总帧数 <em>frames</em></span><span class="v gold">${s.total||0}</span></div>`
-    +`<div class="kv"><span class="k">总积分 <em>integration</em></span><span class="v gold">${fmtInteg(s.total_integration_s)}</span></div>`;
+  setT("s-total", s.total||0);
+  setT("s-integration", fmtInteg(s.total_integration_s));
+
+  // 按滤镜 / 按目标 —— 行数随数据变化,保留 innerHTML
   const fk = Object.keys(byFilter);
-  if(fk.length){
-    html += `<div class="kv"><span class="k">按滤镜 <em>by filter</em></span><span class="v muted"></span></div>`;
-    html += fk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byFilter[k]}</span></div>`).join("");
-  }
+  document.getElementById("s-by-filter").innerHTML = fk.length
+    ? `<div class="kv"><span class="k">按滤镜 <em>by filter</em></span><span class="v muted"></span></div>`
+      + fk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byFilter[k]}</span></div>`).join("")
+    : "";
   const tk = Object.keys(byTarget);
-  if(tk.length){
-    html += `<div class="kv"><span class="k">按目标 <em>by target</em></span><span class="v muted"></span></div>`;
-    html += tk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byTarget[k]}</span></div>`).join("");
-  }
-  document.getElementById("summary").innerHTML = html;
+  document.getElementById("s-by-target").innerHTML = tk.length
+    ? `<div class="kv"><span class="k">按目标 <em>by target</em></span><span class="v muted"></span></div>`
+      + tk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byTarget[k]}</span></div>`).join("")
+    : "";
 
   // 过滤下拉(保留当前选择)
   syncSelect("f-target", tk, "全部目标");
@@ -125,20 +148,20 @@ function selectImage(id, im){
   big.style.display = "block";
   big.src = `/api/library/image?image_id=${id}`;
   if(!im){ return; }
-  document.getElementById("meta").className = "";
-  document.getElementById("meta").innerHTML =
-     `<div class="kv"><span class="k">目标 <em>target</em></span><span class="v gold">${im.target||'—'}</span></div>`
-    +`<div class="kv"><span class="k">滤镜 <em>filter</em></span><span class="v">${im.filter||'—'}</span></div>`
-    +`<div class="kv"><span class="k">曝光 <em>exposure</em></span><span class="v">${im.exposure_s} s</span></div>`
-    +`<div class="kv"><span class="k">增益 <em>gain</em></span><span class="v">${im.gain}</span></div>`
-    +`<div class="kv"><span class="k">偏置 <em>offset</em></span><span class="v">${im.offset}</span></div>`
-    +`<div class="kv"><span class="k">合并 <em>bin</em></span><span class="v">${im.bin}×${im.bin}</span></div>`
-    +`<div class="kv"><span class="k">HFR</span><span class="v gold">${(+im.hfr).toFixed(2)}</span></div>`
-    +`<div class="kv"><span class="k">星数 <em>stars</em></span><span class="v">${im.stars}</span></div>`
-    +`<div class="kv"><span class="k">温度 <em>°C</em></span><span class="v cel">${(+im.temperature).toFixed(1)}</span></div>`
-    +`<div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v">${im.width}×${im.height}</span></div>`
-    +`<div class="kv"><span class="k">均值 <em>mean</em></span><span class="v">${(+im.mean).toFixed(0)}</span></div>`
-    +`<div class="kv"><span class="k">时间 <em>captured</em></span><span class="v">${im.captured_at||'—'}</span></div>`;
+  document.getElementById("meta-empty").style.display = "none";
+  document.getElementById("meta").style.display = "block";
+  setT("d-target", im.target||'—');
+  setT("d-filter", im.filter||'—');
+  setT("d-exposure", `${im.exposure_s} s`);
+  setT("d-gain", im.gain);
+  setT("d-offset", im.offset);
+  setT("d-bin", `${im.bin}×${im.bin}`);
+  setT("d-hfr", (+im.hfr).toFixed(2));
+  setT("d-stars", im.stars);
+  setT("d-temperature", (+im.temperature).toFixed(1));
+  setT("d-size", `${im.width}×${im.height}`);
+  setT("d-mean", (+im.mean).toFixed(0));
+  setT("d-captured", im.captured_at||'—');
   Ops.status("ok", `影像 #${id} · ${im.target||'—'} · ${im.filter||'—'} ${im.exposure_s}s · HFR ${(+im.hfr).toFixed(2)}`);
 }
 

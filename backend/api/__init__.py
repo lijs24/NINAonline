@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Request, Response
@@ -86,6 +87,21 @@ async def equipment_disconnect(request: Request, device_type: str, body: dict = 
     if (err := await _guard(request, body)):
         return JSONResponse(err, status_code=423)
     return await _gw(request).disconnect(device_type)
+
+
+@router.get("/equipment")
+async def equipment_overview(request: Request):
+    """设备页聚合端点:后端一次性把"每类设备的连接状态 + 可用驱动列表"合并好,
+    前端只需调这一个接口直接渲染,不必在浏览器里编排 11 次 list 调用。"""
+    gw = _gw(request)
+    summaries = await gw.device_summaries()
+    drivers = await asyncio.gather(*[gw.list_drivers(s.type) for s in summaries])
+    devices = []
+    for s, drv in zip(summaries, drivers):
+        d = s.model_dump()
+        d["drivers"] = [x.model_dump() for x in drv]
+        devices.append(d)
+    return {"ok": True, "devices": devices}
 
 
 # --------------------------------------------------------------------------- #

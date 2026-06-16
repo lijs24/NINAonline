@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 相机</title>
 <style>
   .cam-grid{display:grid;grid-template-columns:260px 1fr 240px;gap:34px;}
@@ -21,7 +23,7 @@
 <body>
 <header id="app-topbar"></header>
 
-<main class="wrap fade">
+<main class="wrap view-pending">
   <div class="cam-grid">
     <!-- 左:控制 -->
     <div>
@@ -46,7 +48,9 @@
         <button class="cap" id="btn-cool">制冷</button>
         <button class="cap" id="btn-warm">回温</button>
       </div>
-      <div id="cool-stat" class="muted" style="margin-top:12px;font-size:13px"></div>
+      <div id="cool-stat" class="muted" style="margin-top:12px;font-size:13px">
+        当前 <span class="v gold" id="cool-temp">--</span> · 功率 <span id="cool-power">--</span> · <span id="cool-switch">—</span></div>
+      <div id="cool-none" class="muted em" style="margin-top:12px;font-size:13px;display:none">无制冷</div>
     </div>
 
     <!-- 中:预览 -->
@@ -63,7 +67,14 @@
       <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">直方图</h2></div>
       <canvas id="hist" width="240" height="90"></canvas>
       <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
-      <div id="sensor"></div>
+      <div id="sensor">
+        <div class="kv"><span class="k">型号</span><span class="v" id="s-name">—</span></div>
+        <div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v" id="s-size">--</span></div>
+        <div class="kv"><span class="k">像元 <em>µm</em></span><span class="v" id="s-pixel">--</span></div>
+        <div class="kv"><span class="k">位深</span><span class="v" id="s-depth">--</span></div>
+      </div>
+      <div id="sensor-notice" class="muted em" style="font-size:13px;margin-top:6px;display:none">
+        相机未连接 —— 请到「设备」页连接</div>
     </aside>
   </div>
 </main>
@@ -71,6 +82,8 @@
 <script src="/nina-theme.js"></script>
 <script>
 let lastImageId = null, filtersLoaded = false;
+// 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
+function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
 
 async function loadFilters(){
   const fw = await Ops.get("/api/filterwheel");
@@ -87,15 +100,21 @@ async function refresh(){
   document.getElementById("cap-state").textContent =
     ({idle:"空闲",exposing:"曝光中",downloading:"下载中",error:"错误"})[c.state]||c.state;
   document.getElementById("prog-bar").style.width = (c.progress*100||0)+"%";
-  document.getElementById("cool-stat").innerHTML = c.has_cooler
-    ? `当前 <span class="v gold">${c.temperature.toFixed(1)}°C</span> · `
-      +`功率 ${c.cooler_power.toFixed(0)}% · ${c.cooler_on?'制冷开':'制冷关'}` : "无制冷";
-  document.getElementById("sensor").innerHTML = c.connected ?
-     `<div class="kv"><span class="k">型号</span><span class="v">${c.sensor_name||c.name}</span></div>`
-    +`<div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v">${c.chip_width}×${c.chip_height}</span></div>`
-    +`<div class="kv"><span class="k">像元 <em>µm</em></span><span class="v">${c.pixel_size_um}</span></div>`
-    +`<div class="kv"><span class="k">位深</span><span class="v">${c.bit_depth}-bit</span></div>`
-    : `<div class="muted em">相机未连接 —— 请到「设备」页连接</div>`;
+  document.getElementById("cool-stat").style.display = c.has_cooler ? "block" : "none";
+  document.getElementById("cool-none").style.display = c.has_cooler ? "none" : "block";
+  if(c.has_cooler){
+    setT("cool-temp", c.temperature.toFixed(1)+"°C");
+    setT("cool-power", c.cooler_power.toFixed(0)+"%");
+    setT("cool-switch", c.cooler_on?'制冷开':'制冷关');
+  }
+  document.getElementById("sensor").style.display = c.connected ? "block" : "none";
+  document.getElementById("sensor-notice").style.display = c.connected ? "none" : "block";
+  if(c.connected){
+    setT("s-name", c.sensor_name||c.name);
+    setT("s-size", `${c.chip_width}×${c.chip_height}`);
+    setT("s-pixel", c.pixel_size_um);
+    setT("s-depth", `${c.bit_depth}-bit`);
+  }
 }
 
 async function refreshImage(){

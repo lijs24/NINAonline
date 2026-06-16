@@ -65,6 +65,22 @@ app = FastAPI(title="星枢 · NINA Web", version="1.0.0", lifespan=lifespan)
 app.include_router(api_router)
 
 
+@app.middleware("http")
+async def cache_policy(request, call_next):
+    """缓存策略:
+    - HTML 页面 no-store:体积小、每次部署都变,始终取最新;
+    - JS(theme) no-cache:可缓存但每次校验 ETag(未变则 304 秒回),切页不重下、改了也能更新;
+    - 字体等(.woff2)不动,正常长缓存。
+    页面深色背景已内联,首帧即正确,不再白闪。"""
+    resp = await call_next(request)
+    p = request.url.path
+    if p == "/" or p in PAGES or p.endswith(".html"):
+        resp.headers["Cache-Control"] = "no-store"
+    elif p.endswith((".js", ".css")):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.websocket("/api/socket")
 async def socket(ws: WebSocket):
     await ws.accept()

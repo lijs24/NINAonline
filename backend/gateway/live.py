@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 from typing import Any
 
 import httpx
@@ -21,6 +22,18 @@ from config import Settings
 from events import EventBus
 from gateway import models as m
 from gateway.base import NinaGateway
+from gateway.sim import astro
+
+
+def _f(v, default: float = 0.0) -> float:
+    """安全解析浮点:NINA 对不可用值会返回字符串 "NaN" 或 None,
+    直接 float() 会得到 nan/抛错并污染 JSON。一律折回 default。"""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    return default if (math.isnan(x) or math.isinf(x)) else x
+
 
 # 本系统设备名 -> NINA Advanced API 路径段
 NINA_DEV = {
@@ -40,6 +53,8 @@ class LiveGateway(NinaGateway):
         self._api = settings.nina_base_url.rstrip("/") + settings.nina_api_path
         # 连接超时压到 2s:NINA 不可达时快速失败,不拖垮整页
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=2.0))
+        # 站点缓存:get_mount 读到 NINA 真实台址后更新,供 get_conditions 算日高度
+        self._site = (settings.site_lat, settings.site_lng)
         self._ws_task: asyncio.Task | None = None
         self._stop = False
 
@@ -101,7 +116,9 @@ class LiveGateway(NinaGateway):
             ok = isinstance(info, dict) and not info.get("_error")
             conn = bool(info.get("Connected")) if ok else False
             name = info.get("Name", "") if ok else ""
-            return m.DeviceSummary(type=t, connected=conn, name=name,
+            # DeviceId 与 list-devices 的 id 一致,供前端下拉精确选中已连接驱动
+            driver_id = str(info.get("DeviceId", "")) if ok else ""
+            return m.DeviceSummary(type=t, connected=conn, name=name, driver_id=driver_id,
                                    state="idle" if conn else "disconnected")
         return list(await asyncio.gather(*[one(t) for t in m.ALL_DEVICE_TYPES]))
 
@@ -112,15 +129,16 @@ class LiveGateway(NinaGateway):
         if isinstance(info, dict) and not info.get("_error"):
             c.connected = bool(info.get("Connected"))
             c.name = info.get("Name", "")
-            c.temperature = float(info.get("Temperature") or 0)
-            c.target_temperature = float(info.get("TemperatureSetPoint") or 0)
+            c.temperature = _f(info.get("Temperature") or 0)
+            # NINA 有 TargetTemp(制冷目标) 与 TemperatureSetPoint(驱动设定),优先前者
+            c.target_temperature = _f(info.get("TargetTemp", info.get("TemperatureSetPoint")))
             c.cooler_on = bool(info.get("CoolerOn"))
-            c.cooler_power = float(info.get("CoolerPower") or 0)
+            c.cooler_power = _f(info.get("CoolerPower") or 0)
             c.gain = int(info.get("Gain") or 0)
             c.offset = int(info.get("Offset") or 0)
             c.chip_width = int(info.get("XSize") or 0)
             c.chip_height = int(info.get("YSize") or 0)
-            c.pixel_size_um = float(info.get("PixelSize") or 0)
+            c.pixel_size_um = _f(info.get("PixelSize") or 0)
             c.has_cooler = bool(info.get("CanSetTemperature"))
             c.is_exposing = bool(info.get("IsExposing"))
             c.state = "exposing" if c.is_exposing else "idle"
@@ -148,9 +166,9 @@ class LiveGateway(NinaGateway):
             last = info[-1]
             return m.ImageMeta(
                 image_id=len(info) - 1, width=0, height=0,
-                exposure_s=float(last.get("ExposureTime") or 0),
+                exposure_s=_f(last.get("ExposureTime") or 0),
                 gain=int(last.get("Gain") or 0), offset=int(last.get("Offset") or 0),
-                bin=1, filter=last.get("Filter", ""), hfr=float(last.get("HFR") or 0),
+                bin=1, filter=last.get("Filter", ""), hfr=_f(last.get("HFR") or 0),
                 stars=int(last.get("Stars") or 0), captured_at=last.get("Date", ""),
                 image_url="/api/camera/image")
         return None
@@ -176,16 +194,27 @@ class LiveGateway(NinaGateway):
         if isinstance(info, dict) and not info.get("_error"):
             mo.connected = bool(info.get("Connected"))
             mo.name = info.get("Name", "")
-            mo.ra_hours = float(info.get("RightAscension") or 0)
-            mo.dec_degrees = float(info.get("Declination") or 0)
-            mo.ra_text = info.get("RightAscensionString", "")
-            mo.dec_text = info.get("DeclinationString", "")
+            mo.ra_hours = _f(info.get("RightAscension"))
+            mo.dec_degrees = _f(info.get("Declination"))
             mo.tracking = bool(info.get("TrackingEnabled"))
             mo.slewing = bool(info.get("Slewing"))
             mo.at_park = bool(info.get("AtPark"))
-            mo.side_of_pier = str(info.get("SideOfPier", "unknown")).lower()
-            mo.altitude = float(info.get("Altitude") or 0)
-            mo.azimuth = float(info.get("Azimuth") or 0)
+            mo.at_home = bool(info.get("AtHome"))
+            mo.side_of_pier = str(info.get("SideOfPier", "unknown")).lower().replace("pier", "")
+            mo.altitude = _f(info.get("Altitude"))
+            mo.azimuth = _f(info.get("Azimuth"))
+            mo.lst_hours = _f(info.get("SiderealTime"))
+            mo.time_to_meridian_h = _f(info.get("TimeToMeridianFlip"))
+            # 真实台址(NINA 报告)覆盖配置默认,并缓存供 get_conditions
+            lat, lng = _f(info.get("SiteLatitude")), _f(info.get("SiteLongitude"))
+            if lat or lng:
+                mo.site_lat, mo.site_lng = lat, lng
+                mo.site_elev = _f(info.get("SiteElevation"))
+                self._site = (lat, lng)
+            # NINA 未连接时不返回 RA/Dec 字符串,用数值兜底成雕版样式
+            mo.ra_text = info.get("RightAscensionString") or astro.hours_to_hms(mo.ra_hours)
+            mo.dec_text = info.get("DeclinationString") or astro.deg_to_dms(mo.dec_degrees)
+            mo.lst_text = info.get("SiderealTimeString") or astro.hours_to_hms(mo.lst_hours)
         return mo
 
     async def mount_action(self, action: str, p: dict) -> dict:
@@ -217,7 +246,7 @@ class LiveGateway(NinaGateway):
             f.connected = bool(info.get("Connected"))
             f.name = info.get("Name", "")
             f.position = int(info.get("Position") or 0)
-            f.temperature = float(info.get("Temperature") or 0)
+            f.temperature = _f(info.get("Temperature") or 0)
             f.is_moving = bool(info.get("IsMoving"))
         return f
 
@@ -227,7 +256,7 @@ class LiveGateway(NinaGateway):
         if isinstance(info, dict) and not info.get("_error"):
             for pt in info.get("MeasurePoints", []) or []:
                 af.points.append(m.AutoFocusPoint(
-                    position=int(pt.get("Position", 0)), hfr=float(pt.get("Value", 0))))
+                    position=int(pt.get("Position", 0)), hfr=_f(pt.get("Value", 0))))
             cm = info.get("CalculatedFocusPoint") or {}
             af.best_position = int(cm.get("Position", 0)) if cm else None
         return af
@@ -270,12 +299,12 @@ class LiveGateway(NinaGateway):
             g.connected = bool(info.get("Connected"))
             g.name = info.get("Name", "")
             g.state = str(info.get("State", "idle")).lower()
-            g.pixel_scale = float(info.get("PixelScale") or 1)
+            g.pixel_scale = _f(info.get("PixelScale") or 1)
             rms = info.get("RMSError") or {}
             if rms:
-                g.rms_ra = float((rms.get("RA") or {}).get("Arcseconds") or 0)
-                g.rms_dec = float((rms.get("Dec") or {}).get("Arcseconds") or 0)
-                g.rms_total = float((rms.get("Total") or {}).get("Arcseconds") or 0)
+                g.rms_ra = _f((rms.get("RA") or {}).get("Arcseconds") or 0)
+                g.rms_dec = _f((rms.get("Dec") or {}).get("Arcseconds") or 0)
+                g.rms_total = _f((rms.get("Total") or {}).get("Arcseconds") or 0)
         return g
 
     async def get_guider_graph(self) -> list[m.GuideStep]:
@@ -284,10 +313,10 @@ class LiveGateway(NinaGateway):
         if isinstance(info, dict):
             for i, pt in enumerate(info.get("GuideSteps", []) or []):
                 steps.append(m.GuideStep(
-                    t=float(i), ra_raw=float(pt.get("RADistanceRaw") or 0),
-                    dec_raw=float(pt.get("DECDistanceRaw") or 0),
-                    ra_dist=float(pt.get("RADistanceRaw") or 0),
-                    dec_dist=float(pt.get("DECDistanceRaw") or 0)))
+                    t=_f(i), ra_raw=_f(pt.get("RADistanceRaw") or 0),
+                    dec_raw=_f(pt.get("DECDistanceRaw") or 0),
+                    ra_dist=_f(pt.get("RADistanceRaw") or 0),
+                    dec_dist=_f(pt.get("DECDistanceRaw") or 0)))
         return steps
 
     async def guider_action(self, action: str, p: dict) -> dict:
@@ -307,12 +336,12 @@ class LiveGateway(NinaGateway):
     async def get_rotator(self) -> m.RotatorState:
         i = await self._simple_info("rotator")
         return m.RotatorState(connected=bool(i.get("Connected")), name=i.get("Name", ""),
-                              position=float(i.get("Position") or 0))
+                              position=_f(i.get("Position") or 0))
 
     async def get_dome(self) -> m.DomeState:
         i = await self._simple_info("dome")
         return m.DomeState(connected=bool(i.get("Connected")), name=i.get("Name", ""),
-                           azimuth=float(i.get("Azimuth") or 0))
+                           azimuth=_f(i.get("Azimuth") or 0))
 
     async def get_flatdevice(self) -> m.FlatDeviceState:
         i = await self._simple_info("flatdevice")
@@ -326,9 +355,9 @@ class LiveGateway(NinaGateway):
     async def get_weather(self) -> m.WeatherState:
         i = await self._simple_info("weather")
         return m.WeatherState(connected=bool(i.get("Connected")), name=i.get("Name", ""),
-                              temperature=float(i.get("Temperature") or 0),
-                              humidity=float(i.get("Humidity") or 0),
-                              cloud_cover=float(i.get("CloudCover") or 0))
+                              temperature=_f(i.get("Temperature") or 0),
+                              humidity=_f(i.get("Humidity") or 0),
+                              cloud_cover=_f(i.get("CloudCover") or 0))
 
     async def get_safety(self) -> m.SafetyState:
         i = await self._simple_info("safetymonitor")
@@ -376,14 +405,13 @@ class LiveGateway(NinaGateway):
         if isinstance(resp, dict) and not resp.get("_error"):
             return m.PlateSolveResult(
                 ok=True, solved=bool(resp.get("Success", True)),
-                ra_hours=float((resp.get("Coordinates") or {}).get("RA") or 0),
-                dec_degrees=float((resp.get("Coordinates") or {}).get("Dec") or 0),
-                rotation=float(resp.get("PositionAngle") or 0))
+                ra_hours=_f((resp.get("Coordinates") or {}).get("RA") or 0),
+                dec_degrees=_f((resp.get("Coordinates") or {}).get("Dec") or 0),
+                rotation=_f(resp.get("PositionAngle") or 0))
         return m.PlateSolveResult(ok=False, error="NINA 板解算失败或无可解图像")
 
     async def get_conditions(self) -> dict:
-        from gateway.sim import astro
-        sun = astro.sun_altitude(self.s.site_lat, self.s.site_lng)
+        sun = astro.sun_altitude(self._site[0], self._site[1])
         safety = await self._simple_info("safetymonitor")
         return {"ok": True, "sun_altitude": round(sun, 2),
                 "is_safe": bool(safety.get("IsSafe", True)) if safety else None}
