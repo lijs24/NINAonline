@@ -12,11 +12,33 @@
     border-bottom:1px solid var(--hair-soft);}
   .ctl label{color:var(--ink-dim);font-size:14px;}
   .ctl input,.ctl select{width:96px;text-align:right;}
-  #view{width:100%;border:1px solid var(--hair);background:var(--sky-2);min-height:300px;
-    display:block;object-fit:contain;}
+  #view{width:100%;border:1px solid var(--hair);background:#05070d;min-height:300px;
+    display:block;image-rendering:auto;}
   .prog{height:2px;background:var(--hair);margin-top:10px;}
   .prog>div{height:2px;width:0;background:var(--gold);transition:width .3s;}
-  #hist{width:100%;height:90px;display:block;}
+  /* 拉伸 + 直方图(对标 asiair:对数填充直方图 + MTF 拉伸,黑/中/白手柄拖动即时重渲染) */
+  .st-wrap{margin-top:16px;}
+  .st-tools{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .cap.mini{font-size:11.5px;padding:2px 11px;}
+  .hist-box{position:relative;padding-bottom:18px;}
+  #hist{width:100%;height:118px;display:block;background:#05070d;border:1px solid var(--hair-soft);}
+  .st-bar{position:relative;height:10px;margin-top:4px;border:1px solid var(--hair-soft);
+    background:linear-gradient(90deg,#000,#6c6450,#efe6cf);cursor:crosshair;}
+  .st-range{position:absolute;top:-1px;bottom:-1px;border:1px solid var(--gold);
+    background:rgba(201,162,39,.14);pointer-events:none;}
+  .st-h{position:absolute;top:-8px;width:14px;height:24px;transform:translateX(-50%);
+    background:transparent;border:none;padding:0;cursor:ew-resize;touch-action:none;}
+  .st-h::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);}
+  .st-h.blk::before{background:var(--gold);}
+  .st-h.wht::before{background:#f0e6c8;}
+  .st-h.src::before{background:var(--gold);opacity:.55;width:0;border-left:1px dashed var(--gold);}
+  .st-h.tgt::before{background:#cdbf95;width:1px;}
+  .st-h::after{content:"";position:absolute;left:50%;top:-3px;width:7px;height:7px;
+    transform:translateX(-50%) rotate(45deg);}
+  .st-h.blk::after{background:var(--gold);}
+  .st-h.wht::after{background:#f0e6c8;}
+  .st-h.src::after,.st-h.tgt::after{top:auto;bottom:-3px;width:6px;height:6px;border-radius:50%;transform:translateX(-50%);}
+  .st-h.src::after{background:var(--gold);} .st-h.tgt::after{background:#cdbf95;}
   @media(max-width:980px){.cam-grid{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -53,21 +75,40 @@
       <div id="cool-none" class="muted em" style="margin-top:12px;font-size:13px;display:none">无制冷</div>
     </div>
 
-    <!-- 中:预览 -->
+    <!-- 中:预览 + 拉伸 -->
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅲ</span><h2 style="font-size:17px">预览</h2>
         <span class="en">Preview</span><span id="cap-state" style="margin-left:auto;font-size:14px;color:var(--gold);letter-spacing:.4px"></span></div>
-      <img id="view" alt="预览">
+      <canvas id="view"></canvas>
       <div class="prog"><div id="prog-bar"></div></div>
       <div id="cap-detail" style="font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)"></div>
-      <button class="cap" id="btn-solve" style="margin-top:10px">板解算 · Plate Solve</button>
+
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">直方图 · 拉伸</h2>
+        <span class="en">Histogram · Stretch</span></div>
+      <div class="st-wrap">
+        <div class="st-tools">
+          <button class="cap mini" id="st-stf">一键拉伸</button>
+          <button class="cap mini" id="st-strong">强拉伸</button>
+          <button class="cap mini" id="st-linear">线性</button>
+          <span class="muted" id="st-readout" style="margin-left:auto;font-size:11.5px">等待图像</span>
+        </div>
+        <div class="hist-box">
+          <canvas id="hist"></canvas>
+          <div class="st-bar" id="st-bar">
+            <div class="st-range" id="st-range"></div>
+            <button class="st-h blk" id="h-black" type="button" title="黑场"></button>
+            <button class="st-h src" id="h-source" type="button" title="输入中调"></button>
+            <button class="st-h tgt" id="h-target" type="button" title="输出中调"></button>
+            <button class="st-h wht" id="h-white" type="button" title="白场"></button>
+          </div>
+        </div>
+      </div>
+      <button class="cap" id="btn-solve" style="margin-top:16px">板解算 · Plate Solve</button>
     </div>
 
-    <!-- 右:传感器 + 直方图 -->
+    <!-- 右:传感器 -->
     <aside class="rail">
-      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">直方图</h2></div>
-      <canvas id="hist" width="240" height="90"></canvas>
-      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
       <div id="sensor">
         <div class="kv"><span class="k">型号</span><span class="v" id="s-name">—</span></div>
         <div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v" id="s-size">--</span></div>
@@ -226,12 +267,92 @@ function onImageArrived(meta){
   setTimeout(()=>{ if(!cap && !starting) setProg(0); }, 600);  // 100% 闪现后清零
 }
 
-// 带重试的取图:出图瞬间偶尔早于服务端就绪,onerror 退避重试,避免"破图"
-function showImage(id){
-  const v = document.getElementById("view"); v._rt = 0;
-  v.onerror = ()=>{ if(++v._rt <= 4) setTimeout(()=>{ v.src = `/api/camera/image?image_id=${id}&r=${v._rt}&t=${Date.now()}`; }, 600); };
-  v.onload  = ()=>{ v._rt = 0; };
-  v.src = `/api/camera/image?image_id=${id}&t=${Date.now()}`;
+// ── 客户端拉伸引擎(对标 asiair:从预览像素建直方图 + MTF 拉伸,黑/中/白手柄实时重渲染)──
+const off = document.createElement("canvas"), octx = off.getContext("2d", { willReadFrequently:true });
+let rawVals = null, rawMeta = null, histCounts = null, stretchDrag = null;
+const HBINS = 256;
+let stretch = { black:0, white:1, sourceMid:0.5, targetMid:0.5, mode:"stf" };  // 默认一键拉伸
+function clamp(v,a,b){ return v<a?a : v>b?b : v; }
+function mtf(m,x){ m=clamp(m,.001,.999); x=clamp(x,0,1); if(x<=0)return 0; if(x>=1)return 1; return ((m-1)*x)/(((2*m)-1)*x - m); }
+function midToneFor(t,s){ t=clamp(t,.001,.999); s=clamp(s,.001,.999); return clamp((s*(1-t))/(t+s-(2*t*s)),.001,.999); }
+function stretchState(){
+  const black=clamp(stretch.black,0,.999), white=clamp(stretch.white,black+.001,1);
+  const sourceMid=clamp(stretch.sourceMid,.001,.999), targetMid=clamp(stretch.targetMid,.001,.999);
+  return { black, white, sourceMid, targetMid, sourcePosition:black+sourceMid*(white-black),
+           midtone:midToneFor(targetMid,sourceMid), mode:stretch.mode };
+}
+function buildHist(){ histCounts=new Uint32Array(HBINS); if(!rawVals)return; for(let i=0;i<rawVals.length;i++) histCounts[rawVals[i]]++; }
+function histPct(p){ if(!histCounts||!rawVals||!rawVals.length)return 0; const tgt=Math.max(1,Math.floor(rawVals.length*p)); let run=0;
+  for(let i=0;i<HBINS;i++){ run+=histCounts[i]; if(run>=tgt) return (i+0.5)/HBINS; } return 1; }
+function histMad(median){ if(!histCounts||!rawVals)return 0; const mb=clamp(Math.round(median*(HBINS-1)),0,HBINS-1), tgt=Math.max(1,Math.floor(rawVals.length*0.5)); let run=histCounts[mb];
+  for(let d=1;d<HBINS;d++){ const l=mb-d,r=mb+d; if(l>=0)run+=histCounts[l]; if(r<HBINS)run+=histCounts[r]; if(run>=tgt) return d/HBINS; } return 0; }
+function applyPreset(mode){
+  if(!histCounts){ stretch.mode=mode; updateReadout(); return; }
+  if(mode==="linear"){ stretch={black:0,white:1,sourceMid:0.5,targetMid:0.5,mode:"linear"}; renderView(); return; }
+  const median=histPct(0.5), sigma=1.4826*histMad(median), strong=mode==="strong";
+  let black=clamp(median+(strong?-4.5:-2.8)*sigma,0,0.98);
+  let white=histPct(strong?0.9998:0.9995); if(!isFinite(white)||white<=black+0.001) white=1;
+  stretch={ black, white, sourceMid:clamp((median-black)/Math.max(1e-5,white-black),.001,.999),
+            targetMid:strong?0.42:0.25, mode:strong?"strong":"stf" };
+  renderView();
+}
+function renderView(){
+  const v=document.getElementById("view"); if(!v) return; const vctx=v.getContext("2d");
+  if(!rawMeta||!rawVals){ drawHist(); return; }
+  const {black,white,midtone}=stretchState(), inv=1/Math.max(1e-5,white-black), lut=new Uint8Array(256);
+  for(let n=0;n<256;n++){ const x=((n/255)-black)*inv; lut[n]= x<=0?0 : x>=1?255 : Math.round(mtf(midtone,x)*255); }
+  const w=rawMeta.width,h=rawMeta.height; if(v.width!==w)v.width=w; if(v.height!==h)v.height=h;
+  const id=vctx.createImageData(w,h), d=id.data;
+  for(let i=0,j=0;i<rawVals.length;i++,j+=4){ const y=lut[rawVals[i]]; d[j]=d[j+1]=d[j+2]=y; d[j+3]=255; }
+  vctx.putImageData(id,0,0); drawHist();
+}
+// 取预览图 → 离屏抽像素(单色取 R 通道)→ 建直方图 → 应用拉伸。带 onerror 退避重试。
+function loadPreview(id){
+  const img=new Image(); img._rt=0;
+  img.onload=()=>{
+    const w=img.naturalWidth||1,h=img.naturalHeight||1;
+    off.width=w; off.height=h; octx.drawImage(img,0,0);
+    let px; try{ px=octx.getImageData(0,0,w,h).data; }catch(e){ return; }
+    rawVals=new Uint8Array(w*h); for(let i=0,j=0;i<rawVals.length;i++,j+=4) rawVals[i]=px[j];
+    rawMeta={width:w,height:h}; buildHist();
+    if(stretch.mode==="manual") renderView(); else applyPreset(stretch.mode||"stf");
+  };
+  img.onerror=()=>{ if(++img._rt<=4) setTimeout(()=>{ img.src=`/api/camera/image?image_id=${id}&r=${img._rt}&t=${Date.now()}`; }, 600); };
+  img.src=`/api/camera/image?image_id=${id}&t=${Date.now()}`;
+}
+function drawHist(){
+  const cv=document.getElementById("hist"); if(!cv) return; const ctx=cv.getContext("2d");
+  const rect=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1, W=rect.width||240, H=rect.height||118;
+  const pw=Math.max(1,Math.floor(W*dpr)), ph=Math.max(1,Math.floor(H*dpr));
+  if(cv.width!==pw)cv.width=pw; if(cv.height!==ph)cv.height=ph;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H); ctx.fillStyle="#05070d"; ctx.fillRect(0,0,W,H);
+  if(histCounts){
+    let maxLog=1; for(let i=0;i<HBINS;i++) maxLog=Math.max(maxLog,Math.log1p(histCounts[i]));
+    const xs=W/Math.max(1,HBINS-1);
+    ctx.beginPath(); ctx.moveTo(0,H);
+    for(let i=0;i<HBINS;i++) ctx.lineTo(i*xs, H-(Math.log1p(histCounts[i])/maxLog)*H);
+    ctx.lineTo(W,H); ctx.closePath();
+    ctx.fillStyle="rgba(201,162,39,.18)"; ctx.fill();
+    ctx.strokeStyle="rgba(201,162,39,.9)"; ctx.lineWidth=1; ctx.stroke();
+    const {black,white,midtone}=stretchState();
+    ctx.beginPath();
+    for(let p=0;p<=W;p++){ const n=p/Math.max(1,W);
+      const m= n<=black?0 : n>=white?1 : mtf(midtone,(n-black)/Math.max(1e-5,white-black));
+      const y=H-m*H; if(p===0)ctx.moveTo(p,y); else ctx.lineTo(p,y); }
+    ctx.strokeStyle="rgba(233,226,208,.82)"; ctx.lineWidth=1.2; ctx.stroke();
+    const s=stretchState(), mk=(pos,col,dash)=>{ ctx.save(); ctx.strokeStyle=col; ctx.setLineDash(dash||[]); ctx.beginPath(); ctx.moveTo(pos*W,0); ctx.lineTo(pos*W,H); ctx.stroke(); ctx.restore(); };
+    mk(s.black,"#c9a227"); mk(s.sourcePosition,"#c9a227",[4,3]); mk(s.targetMid,"#cdbf95",[2,3]); mk(s.white,"#f0e6c8");
+  }
+  updateHandles(); updateReadout();
+}
+function updateHandles(){
+  const s=stretchState(), set=(id,p)=>{ const e=document.getElementById(id); if(e) e.style.left=(p*100)+"%"; };
+  set("h-black",s.black); set("h-source",s.sourcePosition); set("h-target",s.targetMid); set("h-white",s.white);
+  const r=document.getElementById("st-range"); if(r){ r.style.left=(s.black*100)+"%"; r.style.width=(Math.max(0,s.white-s.black)*100)+"%"; }
+}
+function updateReadout(){
+  const s=stretchState(), L={linear:"线性",stf:"一键拉伸",strong:"强拉伸",manual:"手动"};
+  setT("st-readout", rawVals ? `${L[s.mode]||s.mode} · 黑 ${Math.round(s.black*255)} · 白 ${Math.round(s.white*255)}` : "等待图像");
 }
 
 async function refreshImage(){
@@ -239,24 +360,35 @@ async function refreshImage(){
   if(!r.image) return;
   if(r.image.image_id !== lastImageId){
     lastImageId = r.image.image_id;
-    showImage(lastImageId);
-    drawHist(r.image.histogram||[]);
+    loadPreview(lastImageId);
     const im = r.image;
     Ops.status("ok", `新影像 #${lastImageId}${im.filter?" · "+im.filter:""}${im.exposure_s?" · "+im.exposure_s+"s":""} · HFR ${im.hfr} · ${im.stars} 星`);
     onImageArrived(im);
   }
 }
 
-function drawHist(h){
-  const cv = document.getElementById("hist"), ctx = cv.getContext("2d");
-  ctx.clearRect(0,0,cv.width,cv.height);
-  if(!h.length) return;
-  const max = Math.max(...h)||1, w = cv.width/h.length;
-  ctx.fillStyle = "#c9a227";
-  h.forEach((v,i)=>{ const bh=(v/max)*cv.height; ctx.fillRect(i*w, cv.height-bh, Math.max(1,w-0.5), bh); });
-}
-
 function ctlVal(id){ return document.getElementById(id).value; }
+
+// 拉伸预设按钮 + 手柄拖动(move/up 仅拖动期间挂载,松手即卸,避免 SPA 切页泄漏监听)
+{ const presets={ "st-stf":"stf","st-strong":"strong","st-linear":"linear" };
+  for(const id in presets){ const e=document.getElementById(id); if(e) e.onclick=()=>applyPreset(presets[id]); }
+  const hmap={ "h-black":"black","h-source":"source","h-target":"target","h-white":"white" };
+  const onMove=(ev)=>{
+    if(!stretchDrag||!rawVals) return;
+    const bar=document.getElementById("st-bar"); if(!bar) return;
+    const rect=bar.getBoundingClientRect(), x=clamp((ev.clientX-rect.left)/rect.width,0,1), cur=stretchState();
+    if(stretchDrag==="black"){ stretch.black=clamp(x,0,cur.white-0.001); stretch.sourceMid=clamp((cur.sourcePosition-stretch.black)/Math.max(.001,cur.white-stretch.black),.001,.999); }
+    else if(stretchDrag==="white"){ stretch.white=clamp(x,cur.black+0.001,1); stretch.sourceMid=clamp((cur.sourcePosition-cur.black)/Math.max(.001,stretch.white-cur.black),.001,.999); }
+    else if(stretchDrag==="source"){ stretch.sourceMid=clamp((x-cur.black)/Math.max(.001,cur.white-cur.black),.001,.999); }
+    else if(stretchDrag==="target"){ stretch.targetMid=clamp(x,.001,.999); }
+    stretch.mode="manual"; renderView();
+  };
+  const onUp=()=>{ stretchDrag=null; document.removeEventListener("pointermove",onMove); document.removeEventListener("pointerup",onUp); };
+  for(const id in hmap){ const e=document.getElementById(id); if(e) e.addEventListener("pointerdown",(ev)=>{
+    if(!rawVals) return; stretchDrag=hmap[id]; ev.preventDefault();
+    document.addEventListener("pointermove",onMove); document.addEventListener("pointerup",onUp);
+  }); }
+}
 
 document.getElementById("btn-single").onclick = ()=>{ abortRequested=false; triggerCapture("single"); };
 document.getElementById("btn-loop").onclick = ()=>{ abortRequested=false; triggerCapture("loop"); };
