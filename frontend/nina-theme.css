@@ -11,6 +11,14 @@
 html,body{margin:0;background:var(--sky);color:var(--ink);font-family:var(--serif);
   font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;}
 html{scrollbar-gutter:stable;}  /* 永久预留滚动条槽:内容变高弹出滚动条时不再整页横移 */
+/* 滚动条统一为星图册风格:暗轨 + 发丝金拇指(悬停泛金),全站一致 */
+*{scrollbar-width:thin;scrollbar-color:rgba(201,162,39,.32) transparent;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(201,162,39,.28);border-radius:999px;
+  border:2px solid transparent;background-clip:padding-box;}
+::-webkit-scrollbar-thumb:hover{background:rgba(201,162,39,.55);}
+::-webkit-scrollbar-corner{background:transparent;}
 body{padding-top:52px;padding-bottom:34px;min-height:100vh;}
 a{color:var(--ink);text-decoration:none;}
 h1,h2,h3{font-weight:400;letter-spacing:.5px;}
