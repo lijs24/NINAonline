@@ -123,23 +123,48 @@ async function refresh(){
 // ── 实时拍摄状态机 ──────────────────────────────────────────────
 // 后端拍摄是异步的、出图可能慢;前端据"点击→曝光时长→出图"自驱一个倒计时,
 // 让用户始终看到"曝光中 剩 X.Xs / 下载处理中 / 完成",而不是过早定格"空闲"。
-let cap = null, capTimer = null;
+let cap = null, capTimer = null, starting = false, _frame = 0, captureGen = 0;
 let procEst = 12;   // 下载+处理耗时估计(秒);NINA 不报真实进度,故用上一张实测值自校准
 function setProg(p){ document.getElementById("prog-bar").style.width = Math.max(0,Math.min(100,p))+"%"; }
 function setCap(s){ setT("cap-state", s); }
 function setDetail(s){ setT("cap-detail", s); }
+function lockShoot(lock){   // 锁定拍摄按钮,既给状态反馈也杜绝连点重复触发
+  const s=document.getElementById("btn-single"), l=document.getElementById("btn-loop");
+  if(s) s.disabled=lock; if(l) l.disabled=lock;
+}
 
 async function triggerCapture(mode){
+  if(starting || cap) return;                      // 正在启动/拍摄中 → 忽略连点
   if(!Ops.requireControl("camera")) return;
-  await pushControls();
-  const exp = +ctlVal("exp");
-  const d = await Ops.action("camera","capture",{exposure:exp,gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode});
-  if(d.ok){
-    cap = { exp, mode, t0: Date.now(), phase:"exposing", frame:(cap?cap.frame:0)+1, aborting:false };
-    clearInterval(capTimer); capTimer = setInterval(tickCapture, 100); tickCapture();
-    Ops.status("ok", mode==="loop" ? "循环拍摄中" : "开始曝光");
-  } else {
-    stopCapture("空闲");
+  starting = true;
+  const myGen = ++captureGen;
+  let started = false;
+  lockShoot(true);
+  setProg(0); setCap("正在启动曝光…");              // 立即反馈(同步,先于任何 await),避免"像卡住了"
+  setDetail(`第 ${_frame+1} 张 · 下发参数并启动相机…`);
+  try{
+    await pushControls();
+    const exp = +ctlVal("exp");
+    const d = await Ops.action("camera","capture",{exposure:exp,gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode});
+    if(myGen !== captureGen){                       // 启动期间被中止 → 撤销后端已开的拍摄
+      if(d && d.ok) Ops.action("camera","abort",{});
+      return;
+    }
+    if(d && d.ok){
+      _frame++;
+      cap = { exp, mode, t0: Date.now(), phase:"exposing", frame:_frame, aborting:false };
+      clearInterval(capTimer); capTimer = setInterval(tickCapture, 100); tickCapture();
+      Ops.status("ok", mode==="loop" ? "循环拍摄中" : "开始曝光");
+      started = true;
+    }
+  } catch(e){
+    Ops.status("err", "启动拍摄失败:" + ((e && e.message) || e));
+  } finally {
+    // 仅本代次负责收尾;未成功进入拍摄(失败/异常)必须解锁复位,否则按钮永久禁用
+    if(myGen === captureGen){
+      starting = false;
+      if(!started){ setCap("空闲"); setDetail(""); lockShoot(false); }
+    }
   }
 }
 // 进度条是"曝光 + 下载处理"的总进度(0→100%),两段按时长加权,故下载处理期也一直在走:
@@ -167,8 +192,8 @@ function tickCapture(){
   setDetail(`第 ${cap.frame} 张 · 下载与处理影像… ${ps.toFixed(0)}s / 约 ${procEst.toFixed(0)}s`);
 }
 function stopCapture(label){
-  clearInterval(capTimer); capTimer = null; cap = null;
-  setProg(0); setCap(label||"空闲");
+  clearInterval(capTimer); capTimer = null; cap = null; starting = false; captureGen++;
+  setProg(0); setCap(label||"空闲"); lockShoot(false);
 }
 function onImageArrived(meta){
   if(!cap) return;                                   // 非本前端发起的拍摄,交给轮询显示
@@ -178,10 +203,11 @@ function onImageArrived(meta){
   }
   setProg(100);
   setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星 · 用时 ${((Date.now()-cap.t0)/1000).toFixed(0)}s`);
-  if(cap.mode==="loop" && !cap.aborting){ triggerCapture("loop"); return; }  // 循环:前端驱动下一张
-  clearInterval(capTimer); capTimer = null; cap = null;
-  setCap("空闲");
-  setTimeout(()=>{ if(!cap) setProg(0); }, 600);     // 100% 闪现后清零
+  const loop = cap.mode==="loop" && !cap.aborting;
+  clearInterval(capTimer); capTimer = null; cap = null;        // 先清,否则连点守卫会挡住循环续拍
+  if(loop){ triggerCapture("loop"); return; }                  // 循环:前端驱动下一张
+  setCap("空闲"); lockShoot(false);                            // 单张:解锁拍摄按钮
+  setTimeout(()=>{ if(!cap && !starting) setProg(0); }, 600);  // 100% 闪现后清零
 }
 
 // 带重试的取图:出图瞬间偶尔早于服务端就绪,onerror 退避重试,避免"破图"
