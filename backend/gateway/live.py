@@ -160,7 +160,10 @@ class LiveGateway(NinaGateway):
             params = {"duration": p.get("exposure"), "gain": p.get("gain"),
                       "imageType": p.get("image_type") or "SNAPSHOT",
                       "solve": "false", "save": str(bool(p.get("save", False))).lower(),
-                      "getResult": "false"}
+                      "getResult": "false",
+                      # 不让 NINA 自动拉伸:出"线性"预备图,拉伸交给前端客户端(对标 asiair)。
+                      # 否则 NINA 会归一化亮度,前端直方图无法随曝光真实偏移。
+                      "skipAutoStretch": "true"}
             params = {k: v for k, v in params.items() if v is not None}
             return _ok(await self._get("/equipment/camera/capture", **params))
         if action == "abort":
@@ -234,9 +237,12 @@ class LiveGateway(NinaGateway):
         # 快照走 /prepared-image(最近一张已处理图,直接回原始字节);已保存图走 /image/{idx}
         # (stream 省略时返回 base64 信封)。两端点返回形态不同,故按 content-type 分别处理。
         import base64
-        attempts = [("/prepared-image", {"resize": "true", "autoPrepare": "true"})]
+        # autoPrepare=false → 取"线性"图(不在服务端再拉伸),前端据此算直方图(随曝光真实偏移)+ 自行拉伸显示。
+        # 回退到 autoPrepare=true(已拉伸)以防线性取不到。
+        attempts = [("/prepared-image", {"resize": "true", "autoPrepare": "false"}),
+                    ("/prepared-image", {"resize": "true", "autoPrepare": "true"})]
         if image_id is not None:
-            attempts.append((f"/image/{image_id}", {"resize": "true", "autoPrepare": "true"}))
+            attempts.append((f"/image/{image_id}", {"resize": "true", "autoPrepare": "false"}))
         attempts.append(("/image/0", {"resize": "true", "autoPrepare": "true"}))
         for path, params in attempts:
             try:
