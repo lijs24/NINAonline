@@ -7,14 +7,18 @@
 <link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 相机</title>
 <style>
-  .cam-grid{display:grid;grid-template-columns:260px 1fr 330px;gap:30px;}
+  .cam-grid{display:grid;grid-template-columns:260px minmax(0,1fr) 330px;gap:30px;}
   .ctl{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
     border-bottom:1px solid var(--hair-soft);}
   .ctl label{color:var(--ink-dim);font-size:14px;}
   .ctl input,.ctl select{width:96px;text-align:right;}
-  /* 预览大图但封顶视口高度,object-fit 保比例不变形 → 直方图(右栏)与大图同屏 */
-  #view{width:100%;max-height:70vh;object-fit:contain;border:1px solid var(--hair);
-    background:#05070d;display:block;}
+  /* 预览:固定高度可滚动视口 + 按缩放尺寸的画布(对标 asiair:滚轮缩放、拖动平移、适应窗口) */
+  .viewport{height:70vh;overflow:auto;border:1px solid var(--hair);background:#05070d;position:relative;}
+  .viewport.can-pan{cursor:grab;}
+  .viewport.dragging{cursor:grabbing;user-select:none;}
+  .stage{min-width:100%;min-height:100%;display:grid;place-items:center;}
+  #view{display:block;image-rendering:auto;}
+  #zoom-sel{width:auto;min-width:90px;font-size:12px;padding:2px 8px;}
   .prog{height:2px;background:var(--hair);margin-top:10px;}
   .prog>div{height:2px;width:0;background:var(--gold);transition:width .3s;}
   /* 拉伸 + 直方图(对标 asiair:对数填充直方图 + MTF 拉伸,黑/中/白手柄拖动即时重渲染) */
@@ -79,8 +83,14 @@
     <!-- 中:预览 + 拉伸 -->
     <div>
       <div class="sec-h" style="margin-top:0"><span class="rn">Ⅲ</span><h2 style="font-size:17px">预览</h2>
-        <span class="en">Preview</span><span id="cap-state" style="margin-left:auto;font-size:14px;color:var(--gold);letter-spacing:.4px"></span></div>
-      <canvas id="view"></canvas>
+        <span class="en">Preview</span>
+        <select id="zoom-sel" class="fld" style="margin-left:auto" title="缩放(滚轮缩放·拖动平移)">
+          <option value="fit">适应窗口</option><option value="0.5">50%</option>
+          <option value="1">100%</option><option value="2">200%</option><option value="4">400%</option>
+          <option value="custom">—</option>
+        </select>
+        <span id="cap-state" style="margin-left:14px;font-size:14px;color:var(--gold);letter-spacing:.4px"></span></div>
+      <div class="viewport" id="viewport"><div class="stage" id="stage"><canvas id="view"></canvas></div></div>
       <div class="prog"><div id="prog-bar"></div></div>
       <div id="cap-detail" style="font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)"></div>
       <button class="cap" id="btn-solve" style="margin-top:14px">板解算 · Plate Solve</button>
@@ -306,7 +316,51 @@ function renderView(){
   for(let i=0,j=0;i<rawVals.length;i++,j+=4){ const y=lut[rawVals[i]]; d[j]=d[j+1]=d[j+2]=y; d[j+3]=255; }
   vctx.putImageData(id,0,0); drawHist();
 }
-// 取预览图 → 离屏抽像素(单色取 R 通道)→ 建直方图 → 应用拉伸。带 onerror 退避重试。
+
+// ── 缩放/平移视口(对标 asiair:滚轮以光标为中心缩放、拖动平移、适应窗口)──
+const vw = { zoom:1, fitZoom:1, minZoom:0.1, maxZoom:12, dragging:false, pointerId:null, dsX:0,dsY:0,dsL:0,dsT:0 };
+function $g(id){ return document.getElementById(id); }
+function canvasHasImage(){ const c=$g("view"); return !!rawMeta && c.width>0 && c.height>0; }
+function vpMetrics(zoom){ zoom=zoom||vw.zoom; const c=$g("view"),vp=$g("viewport");
+  const sw=c.width||0, sh=c.height||0, vpw=vp.clientWidth||1, vph=vp.clientHeight||1;
+  const dw=Math.max(1,Math.round(sw*zoom)), dh=Math.max(1,Math.round(sh*zoom));
+  const stw=Math.max(dw,vpw), sth=Math.max(dh,vph);
+  return { sw,sh,vpw,vph,dw,dh,stw,sth, offX:Math.max(0,Math.round((stw-dw)/2)), offY:Math.max(0,Math.round((sth-dh)/2)) }; }
+function applyVpLayout(){ const c=$g("view"),st=$g("stage"),m=vpMetrics();
+  c.style.width=m.dw+"px"; c.style.height=m.dh+"px"; st.style.width=m.stw+"px"; st.style.height=m.sth+"px";
+  updateVpCursor(); updateZoomReadout(); return m; }
+function updateVpCursor(){ const vp=$g("viewport"); if(!vp) return;
+  const canPan=canvasHasImage() && (vp.scrollWidth>vp.clientWidth+1 || vp.scrollHeight>vp.clientHeight+1);
+  vp.classList.toggle("can-pan", canPan && !vw.dragging); vp.classList.toggle("dragging", vw.dragging); }
+function centerVp(){ const vp=$g("viewport");
+  vp.scrollLeft=Math.max(0,Math.round((vp.scrollWidth-vp.clientWidth)/2));
+  vp.scrollTop=Math.max(0,Math.round((vp.scrollHeight-vp.clientHeight)/2)); updateVpCursor(); }
+function updateVpFit(reset){ if(!canvasHasImage()) return; const c=$g("view"),vp=$g("viewport");
+  if(vp.clientWidth<10 || vp.clientHeight<10){ applyVpLayout(); return; }   // 布局未就绪:先按当前 zoom 铺,待尺寸有效再 fit
+  const fit=Math.min(vp.clientWidth/(c.width||1), vp.clientHeight/(c.height||1));
+  const wasFit=reset||Math.abs(vw.zoom-(vw.fitZoom||fit))<0.001;
+  vw.fitZoom=fit; vw.minZoom=Math.min(fit,1);
+  vw.zoom = wasFit ? fit : clamp(vw.zoom,vw.minZoom,vw.maxZoom);
+  applyVpLayout(); if(wasFit) centerVp(); }
+function zoomAt(cx,cy,factor){ if(!canvasHasImage()) return; const vp=$g("viewport");
+  const b=vpMetrics(vw.zoom), rect=vp.getBoundingClientRect(), ox=cx-rect.left, oy=cy-rect.top;
+  const lx=clamp((vp.scrollLeft+ox-b.offX)/Math.max(1,b.dw),0,1), ly=clamp((vp.scrollTop+oy-b.offY)/Math.max(1,b.dh),0,1);
+  const nz=clamp(vw.zoom*factor,vw.minZoom,vw.maxZoom); if(Math.abs(nz-vw.zoom)<1e-4) return;
+  vw.zoom=nz; const a=applyVpLayout();
+  vp.scrollLeft=clamp(a.offX+lx*a.dw-ox,0,Math.max(0,a.stw-a.vpw));
+  vp.scrollTop =clamp(a.offY+ly*a.dh-oy,0,Math.max(0,a.sth-a.vph)); updateVpCursor(); }
+function setZoom(v){ if(!canvasHasImage()) return;
+  if(v==="custom"){ updateZoomReadout(); return; }
+  if(v==="fit"){ updateVpFit(true); return; }              // 重算适应缩放(视口尺寸可能已变)
+  vw.zoom = clamp(+v,vw.minZoom,vw.maxZoom);
+  applyVpLayout(); centerVp(); }
+function updateZoomReadout(){ const sel=$g("zoom-sel"); if(!sel) return;
+  const pct=Math.round(vw.zoom*100); let m = Math.abs(vw.zoom-vw.fitZoom)<0.005 ? "fit" : null;
+  if(!m){ for(const k of ["0.5","1","2","4"]) if(Math.abs(vw.zoom-(+k))<0.005) m=k; }
+  const co=sel.querySelector('option[value="custom"]'); if(co) co.textContent = m ? "—" : pct+"%";
+  sel.value = m || "custom"; }
+
+// 取预览图 → 离屏抽像素(单色取 R 通道)→ 建直方图 → 应用拉伸 → 适应窗口。带 onerror 退避重试。
 function loadPreview(id){
   const img=new Image(); img._rt=0;
   img.onload=()=>{
@@ -316,6 +370,7 @@ function loadPreview(id){
     rawVals=new Uint8Array(w*h); for(let i=0,j=0;i<rawVals.length;i++,j+=4) rawVals[i]=px[j];
     rawMeta={width:w,height:h}; buildHist();
     if(stretch.mode==="manual") renderView(); else applyPreset(stretch.mode||"stf");
+    updateVpFit(true);                                  // 新图:适应窗口并居中
   };
   img.onerror=()=>{ if(++img._rt<=4) setTimeout(()=>{ img.src=`/api/camera/image?image_id=${id}&r=${img._rt}&t=${Date.now()}`; }, 600); };
   img.src=`/api/camera/image?image_id=${id}&t=${Date.now()}`;
@@ -388,6 +443,23 @@ function ctlVal(id){ return document.getElementById(id).value; }
     if(!rawVals) return; stretchDrag=hmap[id]; ev.preventDefault();
     document.addEventListener("pointermove",onMove); document.addEventListener("pointerup",onUp);
   }); }
+}
+
+// 缩放/平移:滚轮缩放、拖动平移、下拉选择缩放级别。监听挂在 viewport 上,随切页 DOM 替换自动释放。
+{ const vp=document.getElementById("viewport"), zs=document.getElementById("zoom-sel");
+  if(vp){
+    vp.addEventListener("wheel",(e)=>{ if(!canvasHasImage())return; e.preventDefault(); zoomAt(e.clientX,e.clientY, e.deltaY<0?1.12:1/1.12); }, {passive:false});
+    vp.addEventListener("pointerdown",(e)=>{ if(e.button!==0||!canvasHasImage())return;
+      if(vp.scrollWidth<=vp.clientWidth+1 && vp.scrollHeight<=vp.clientHeight+1) return;   // 未超出视口,无需平移
+      vw.dragging=true; vw.pointerId=e.pointerId; vw.dsX=e.clientX; vw.dsY=e.clientY; vw.dsL=vp.scrollLeft; vw.dsT=vp.scrollTop;
+      vp.setPointerCapture(e.pointerId); updateVpCursor(); e.preventDefault(); });
+    vp.addEventListener("pointermove",(e)=>{ if(!vw.dragging||vw.pointerId!==e.pointerId)return;
+      vp.scrollLeft=vw.dsL-(e.clientX-vw.dsX); vp.scrollTop=vw.dsT-(e.clientY-vw.dsY); });
+    const stop=(e)=>{ if(vw.pointerId!==null && e.pointerId!==undefined && vw.pointerId!==e.pointerId)return; vw.dragging=false; vw.pointerId=null; updateVpCursor(); };
+    vp.addEventListener("pointerup",stop); vp.addEventListener("pointercancel",stop); vp.addEventListener("lostpointercapture",stop);
+  }
+  if(zs) zs.addEventListener("change",(e)=>setZoom(e.target.value));
+  window.addEventListener("resize",()=>{ if(document.getElementById("viewport")) updateVpFit(false); });  // 视口仍在(本页)才处理
 }
 
 document.getElementById("btn-single").onclick = ()=>{ abortRequested=false; triggerCapture("single"); };
