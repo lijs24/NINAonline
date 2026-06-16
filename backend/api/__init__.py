@@ -30,9 +30,12 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-async def _guard(request: Request, body: dict) -> Optional[dict]:
-    """写动作前的校验:只读模式硬禁 + 协作锁。返回 None=放行,否则返回错误响应体。"""
-    if request.app.state.settings.readonly:
+async def _guard(request: Request, body: dict, domain: Optional[str] = None) -> Optional[dict]:
+    """写动作前的校验:只读模式硬禁(可按域解禁) + 协作锁。
+    返回 None=放行,否则返回错误响应体。domain 命中 settings.writable_domains 时,
+    即便全局 readonly 也放行(仍需通过协作锁)。"""
+    s = request.app.state.settings
+    if s.readonly and (domain is None or domain not in s.writable_domains):
         return {"ok": False, "error": "只读监控模式 —— 已禁用对远程设备的所有操作",
                 "readonly": True}
     sid = (body or {}).get("session_id", "")
@@ -54,6 +57,7 @@ async def status(request: Request):
         "ok": True,
         "provider": gw.mode,
         "readonly": s.readonly,
+        "writable_domains": sorted(s.writable_domains),   # 只读下仍可控的域(按域解禁)
         "server_time": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
         "site": {"lat": s.site_lat, "lng": s.site_lng, "elev": s.site_elev},
         "connected_devices": connected,
@@ -108,7 +112,8 @@ async def equipment_overview(request: Request):
 # 通用动作辅助
 # --------------------------------------------------------------------------- #
 async def _do_action(request: Request, fn_name: str, body: dict):
-    if (err := await _guard(request, body)):
+    domain = fn_name.replace("_action", "")          # camera_action → camera
+    if (err := await _guard(request, body, domain)):
         return JSONResponse(err, status_code=423)
     action = (body or {}).get("action", "")
     params = (body or {}).get("params", {}) or {}
@@ -200,9 +205,9 @@ async def conditions(request: Request):
 
 @router.post("/camera/platesolve")
 async def camera_platesolve(request: Request, body: dict = Body(default={})):
-    if request.app.state.settings.readonly:
-        return JSONResponse({"ok": False, "error": "只读监控模式 —— 已禁用板解算",
-                             "readonly": True}, status_code=423)
+    # 板解算属相机域:相机解禁则放行(仍需协作锁)
+    if (err := await _guard(request, body, "camera")):
+        return JSONResponse(err, status_code=423)
     res = await _gw(request).platesolve()
     return res.model_dump()
 
@@ -251,7 +256,7 @@ async def guider_graph(request: Request):
 # --------------------------------------------------------------------------- #
 @router.post("/sequence/plan")
 async def sequence_plan(request: Request, body: dict = Body(default={})):
-    if (err := await _guard(request, body)):
+    if (err := await _guard(request, body, "sequence")):   # 与 sequence/action 同域门禁
         return JSONResponse(err, status_code=423)
     return await _gw(request).sequence_action("set_plan", {"plan": body.get("plan", {})})
 

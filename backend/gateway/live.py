@@ -144,23 +144,63 @@ class LiveGateway(NinaGateway):
             c.state = "exposing" if c.is_exposing else "idle"
         return c
 
+    @staticmethod
+    def _binstr(v) -> str:
+        n = max(1, int(v))
+        return f"{n}x{n}"
+
     async def camera_action(self, action: str, p: dict) -> dict:
         if action == "capture":
-            return _ok(await self._get("/equipment/camera/capture",
-                                       duration=p.get("exposure"), gain=p.get("gain")))
+            # NINA 拍摄用当前 binning,故 bin 先经 set-binning 落地,再启动异步曝光;
+            # gain 随拍摄参数下发(NINA 无独立 set-gain);getResult=false → 立即返回,
+            # 完成由 WS 事件(API-CAPTURE-FINISHED / IMAGE-SAVE)通知,前端再拉预览。
+            if p.get("bin"):
+                await self._get("/equipment/camera/set-binning", binning=self._binstr(p["bin"]))
+            params = {"duration": p.get("exposure"), "gain": p.get("gain"),
+                      "imageType": p.get("image_type") or "SNAPSHOT",
+                      "solve": "false", "save": str(bool(p.get("save", False))).lower(),
+                      "getResult": "false"}
+            params = {k: v for k, v in params.items() if v is not None}
+            return _ok(await self._get("/equipment/camera/capture", **params))
         if action == "abort":
             return _ok(await self._get("/equipment/camera/abort-exposure"))
         if action == "cool":
             return _ok(await self._get("/equipment/camera/cool",
-                                       temperature=p.get("temperature"), cancel="false"))
+                                       temperature=p.get("temperature"),
+                                       minutes=p.get("minutes", -1), cancel="false"))
         if action == "warm":
-            return _ok(await self._get("/equipment/camera/warm", cancel="false"))
+            return _ok(await self._get("/equipment/camera/warm",
+                                       minutes=p.get("minutes", -1), cancel="false"))
         if action == "set_control":
-            # NINA 无通用 set;按项分发(此处仅示意常见项)
-            return {"ok": True, "note": "live 模式部分控制项需经 NINA profile"}
+            name, val = p.get("name"), p.get("value")
+            if name in ("bin", "Bin", "Binning"):
+                return _ok(await self._get("/equipment/camera/set-binning", binning=self._binstr(val)))
+            if name in ("Readout", "ReadoutMode"):
+                return _ok(await self._get("/equipment/camera/set-readout", mode=int(val)))
+            if name in ("USB", "USBLimit"):
+                return _ok(await self._get("/equipment/camera/usb-limit", limit=int(val)))
+            if name == "DewHeater":
+                return _ok(await self._get("/equipment/camera/dew-heater",
+                                           power=str(bool(int(val))).lower()))
+            if name in ("TargetTemp", "Temperature"):
+                return _ok(await self._get("/equipment/camera/cool",
+                                           temperature=float(val), minutes=-1, cancel="false"))
+            if name == "CoolerOn":
+                if int(val):
+                    info = await self._get("/equipment/camera/info")
+                    tt = _f((info or {}).get("TargetTemp", (info or {}).get("TemperatureSetPoint")))
+                    return _ok(await self._get("/equipment/camera/cool",
+                                               temperature=tt, minutes=-1, cancel="false"))
+                return _ok(await self._get("/equipment/camera/warm", minutes=-1, cancel="false"))
+            if name in ("Gain", "Offset"):
+                # NINA Advanced API 无独立 set-gain/offset:Gain 随拍摄参数下发;
+                # Offset 由 NINA Profile 决定,接口不支持动态设置 —— 不报错,如实说明。
+                return {"ok": True, "note": "增益随拍摄下发;偏置经 NINA Profile,接口不支持动态设置"}
+            return {"ok": False, "error": f"live 未映射相机控制项 {name}"}
         return {"ok": False, "error": f"live 未映射相机动作 {action}"}
 
     async def get_image_meta(self, image_id=None) -> m.ImageMeta | None:
+        # 优先用已保存历史的最后一张;无历史(快照未保存)则用曝光结束时间做"新图"标记 + 抓拍统计
         info = await self._get("/image-history", all="true")
         if isinstance(info, list) and info:
             last = info[-1]
@@ -171,20 +211,42 @@ class LiveGateway(NinaGateway):
                 bin=1, filter=last.get("Filter", ""), hfr=_f(last.get("HFR") or 0),
                 stars=int(last.get("Stars") or 0), captured_at=last.get("Date", ""),
                 image_url="/api/camera/image")
+        cam = await self._get("/equipment/camera/info")
+        if isinstance(cam, dict) and not cam.get("_error") and cam.get("ExposureEndTime"):
+            stats = await self._get("/equipment/camera/capture/statistics")
+            s = stats if isinstance(stats, dict) and not stats.get("_error") else {}
+            eet = str(cam.get("ExposureEndTime"))
+            return m.ImageMeta(
+                image_id=abs(hash(eet)) % 1_000_000,      # 每次新曝光 → 新 id,前端据此刷新预览
+                width=int(cam.get("XSize") or 0), height=int(cam.get("YSize") or 0),
+                exposure_s=0.0, gain=int(cam.get("Gain") or 0),
+                offset=int(cam.get("Offset") or 0), bin=int(cam.get("BinX") or 1),
+                filter="", hfr=_f(s.get("HFR") or 0),
+                stars=int(s.get("Stars") or s.get("DetectedStars") or 0),
+                captured_at=eet, image_url="/api/camera/image")
         return None
 
     async def get_image_png(self, image_id=None, stretch=True) -> bytes | None:
-        try:
-            idx = image_id if image_id is not None else 0
-            r = await self._client.get(self._api + f"/image/{idx}",
-                                       params={"resize": "true", "autoPrepare": "true"})
-            data = r.json()
-            b64 = data.get("Response") if isinstance(data, dict) else None
-            if b64:
-                import base64
-                return base64.b64decode(b64)
-        except Exception:
-            pass
+        # 快照走 /prepared-image(最近一张已处理图,直接回原始字节);已保存图走 /image/{idx}
+        # (stream 省略时返回 base64 信封)。两端点返回形态不同,故按 content-type 分别处理。
+        import base64
+        attempts = [("/prepared-image", {"resize": "true", "autoPrepare": "true"})]
+        if image_id is not None:
+            attempts.append((f"/image/{image_id}", {"resize": "true", "autoPrepare": "true"}))
+        attempts.append(("/image/0", {"resize": "true", "autoPrepare": "true"}))
+        for path, params in attempts:
+            try:
+                r = await self._client.get(self._api + path, params=params)
+                if r.status_code != 200:
+                    continue
+                if r.headers.get("content-type", "").startswith("image/"):
+                    return r.content                     # 原始 PNG/JPEG 字节
+                data = r.json()                          # base64 信封 {Response: "..."}
+                b64 = data.get("Response") if isinstance(data, dict) else None
+                if isinstance(b64, str) and b64:
+                    return base64.b64decode(b64)
+            except Exception:
+                continue
         return None
 
     # -- 赤道仪 ----------------------------------------------------------- #
@@ -457,7 +519,7 @@ class LiveGateway(NinaGateway):
                             resp = data.get("Response", data)
                             evt = resp.get("Event") if isinstance(resp, dict) else None
                             if evt:
-                                self.bus.publish(evt, data=resp)
+                                self.bus.publish(evt, domain=_evt_domain(evt), data=resp)
             except Exception:
                 await asyncio.sleep(5.0)
 
@@ -466,3 +528,22 @@ def _ok(resp: Any) -> dict:
     if isinstance(resp, dict) and resp.get("_error"):
         return {"ok": False, "error": resp["_error"]}
     return {"ok": True, "response": resp}
+
+
+# NINA 事件名 → 设备域(前端按 e.domain 决定刷新哪页;NINA 事件不带域,据名前缀推)
+_EVT_DOMAIN = (
+    ("CAMERA", "camera"), ("IMAGE", "camera"), ("API-CAPTURE", "camera"),
+    ("AUTOFOCUS", "focuser"), ("FOCUSER", "focuser"),
+    ("MOUNT", "mount"), ("FILTERWHEEL", "filterwheel"), ("GUIDER", "guider"),
+    ("ROTATOR", "rotator"), ("DOME", "dome"), ("FLAT", "flatdevice"),
+    ("SWITCH", "switch"), ("WEATHER", "weather"), ("SAFETY", "safetymonitor"),
+    ("SEQUENCE", "sequence"), ("PLATESOLVE", "camera"),
+)
+
+
+def _evt_domain(evt: str) -> str:
+    e = (evt or "").upper()
+    for pre, dom in _EVT_DOMAIN:
+        if e.startswith(pre):
+            return dom
+    return ""

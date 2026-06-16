@@ -63,6 +63,8 @@
     sessionId: sid,
     isController: false,
     readonly: false,
+    writableDomains: [],            // 只读下仍可控的域(按域解禁,如 ["camera"])
+    fullyReadonly: false,           // readonly 且无任何解禁域 → 完全只读
     controlState: null,
     _evtHandlers: [],
     _ctrlHandlers: [],
@@ -123,8 +125,11 @@
 
     onEvent(cb) { Ops._evtHandlers.push(cb); },
     onControl(cb) { Ops._ctrlHandlers.push(cb); },
-    requireControl() {
-      if (Ops.readonly) { Ops.status("warn", "只读监控模式 —— 已禁用对设备的操作"); return false; }
+    requireControl(domain) {
+      // 只读模式下,仅"已解禁的域"放行(传 domain 才判定);其余一律拦下
+      if (Ops.readonly && !(domain && Ops.writableDomains.includes(domain))) {
+        Ops.status("warn", "只读监控模式 —— 已禁用对设备的操作"); return false;
+      }
       if (!Ops.isController) { Ops.status("warn", "请先在右上角切到「主控」再操作"); return false; }
       return true;
     },
@@ -181,10 +186,13 @@
       Ops.controlState = p;
       const holder = p && p.controller, self = !!(p && p.held_by_self);
       Ops.isController = self;
-      if (Ops.readonly) { ind.className = "ops-ctrl busy"; ind.textContent = "只读监控"; return; }
+      // 完全只读:定格"只读监控",不显示主控状态。部分解禁(如相机可控)则正常显示主控,
+      // 以便用户取得主控来操作已解禁的域。
+      if (Ops.fullyReadonly) { ind.className = "ops-ctrl busy"; ind.textContent = "只读监控"; return; }
       ind.className = "ops-ctrl" + (self ? " self" : holder ? " busy" : "");
-      ind.textContent = !holder ? "主控空闲" : self ? "当前主控"
-        : `主控中 · ${holder.display_name || holder.client_ip || "其他"}`;
+      const suffix = Ops.readonly ? " · 限" + Ops.writableDomains.join("/") : "";
+      ind.textContent = (!holder ? "主控空闲" : self ? "当前主控"
+        : `主控中 · ${holder.display_name || holder.client_ip || "其他"}`) + (holder || self ? "" : suffix);
       sel.value = self ? "controller" : "monitor";
       Ops._ctrlHandlers.forEach((cb) => { try { cb(p); } catch (x) {} });
     };
@@ -195,7 +203,7 @@
       } catch (e) {}
     };
     sel.addEventListener("change", async () => {
-      if (Ops.readonly) return;
+      if (Ops.fullyReadonly) return;
       const d = await Ops.post("/api/control-role", { role: sel.value, session_label: "web" });
       if (d && d.ok) { render(d); Ops.status("ok", sel.value === "controller" ? "已取得主控权" : "已切回监控"); }
     });
@@ -370,19 +378,26 @@
     document.dispatchEvent(new CustomEvent("ops:ready"));   // 首屏页 init
     prefetchAll();
 
-    // /api/status:状态行 + 只读标记
+    // /api/status:状态行 + 只读/按域解禁标记
     Ops.api("/api/status").then(({ ok, data }) => {
       if (ok && data && data.ok) {
         Ops.readonly = !!data.readonly;
-        if (Ops.readonly) {
+        Ops.writableDomains = data.writable_domains || [];
+        Ops.fullyReadonly = Ops.readonly && Ops.writableDomains.length === 0;
+        const role = document.getElementById("ops-role");
+        if (Ops.fullyReadonly) {
           const ind = document.getElementById("ops-ctrl");
           if (ind) { ind.textContent = "只读监控"; ind.className = "ops-ctrl busy"; }
-          const role = document.getElementById("ops-role");
           if (role) { role.disabled = true; role.title = "只读模式不可主控"; }
+        } else if (role) {
+          role.disabled = false;       // 部分解禁:可取得主控来操作已解禁的域
+          role.title = Ops.readonly ? "只读监控 · " + Ops.writableDomains.join("/") + " 可控" : "";
         }
         const mode = data.provider === "sim" ? "模拟引擎" : "NINA 实机";
+        const ctl = Ops.fullyReadonly ? " · 只读监控"
+          : Ops.readonly ? ` · ${Ops.writableDomains.join("/")} 可控(余只读)` : "";
         Ops.status(Ops.readonly ? "warn" : "ok",
-          `已连接后端 · ${mode}${Ops.readonly ? " · 只读监控" : ""} · `
+          `已连接后端 · ${mode}${ctl} · `
           + `${data.connected_devices.length}/${data.device_count} 设备在线`);
         window.OPS_BOOT = data;
       } else {

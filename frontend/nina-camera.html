@@ -140,45 +140,53 @@ function drawHist(h){
 function ctlVal(id){ return document.getElementById(id).value; }
 
 document.getElementById("btn-single").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("camera")) return;
   await pushControls();
   const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"single"});
   if(d.ok) Ops.status("ok","开始单张曝光");
 };
 document.getElementById("btn-loop").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("camera")) return;
   await pushControls();
   const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"loop"});
   if(d.ok) Ops.status("ok","开始循环拍摄");
 };
 document.getElementById("btn-abort").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("camera")) return;
   const d = await Ops.action("camera","abort",{}); if(d.ok) Ops.status("warn","已中止曝光");
 };
 document.getElementById("btn-cool").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("camera")) return;
   const d = await Ops.action("camera","cool",{temperature:+ctlVal("ttemp")}); if(d.ok) Ops.status("ok","开始制冷至 "+ctlVal("ttemp")+"°C");
 };
 document.getElementById("btn-warm").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("camera")) return;
   const d = await Ops.action("camera","warm",{}); if(d.ok) Ops.status("ok","开始回温");
 };
 document.getElementById("btn-solve").onclick = async ()=>{
+  if(!Ops.requireControl("camera")) return;
   Ops.status("ok","板解算中…");
   const d = await Ops.post("/api/camera/platesolve", {});
   if(d && d.solved) Ops.status("ok",`板解算成功 · RA ${d.ra_text} · Dec ${d.dec_text} · 旋转 ${d.rotation}°`);
   else Ops.status("err",(d&&d.error)||"板解算失败");
 };
 
+// 拍摄前下发增益/偏置(相机域);滤镜轮属另一域,仅当它也可控时才切,免得在"仅相机解禁"下报错
+function fwWritable(){ return !Ops.readonly || Ops.writableDomains.includes("filterwheel"); }
 async function pushControls(){
   await Ops.action("camera","set_control",{name:"Gain",value:+ctlVal("gain")});
   await Ops.action("camera","set_control",{name:"Offset",value:+ctlVal("offset")});
-  if(!document.getElementById("filter").disabled)
+  if(!document.getElementById("filter").disabled && fwWritable())
     await Ops.action("filterwheel","change",{position:+ctlVal("filter")});
 }
 
 document.addEventListener("ops:ready", ()=>{ loadFilters(); refresh(); refreshImage(); });
-Ops.onEvent((e)=>{ if(e.event==="IMAGE-SAVE") refreshImage(); if(e.domain==="camera") refresh(); });
+// 拍完刷新预览:保存触发 IMAGE-SAVE,快照触发 IMAGE-PREPARED / API-CAPTURE-FINISHED;轮询兜底
+Ops.onEvent((e)=>{
+  const ev = e.event || "";
+  if(/IMAGE-SAVE|IMAGE-PREPARED|CAPTURE-FINISHED/.test(ev)) refreshImage();
+  if(e.domain==="camera") refresh();
+});
 setInterval(()=>{ if(!document.hidden){ refresh(); refreshImage(); if(!filtersLoaded) loadFilters(); } }, 2000);
 </script>
 </body>
