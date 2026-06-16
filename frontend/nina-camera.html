@@ -7,13 +7,14 @@
 <link rel="stylesheet" href="/nina-theme.css">
 <title>星枢 · 相机</title>
 <style>
-  .cam-grid{display:grid;grid-template-columns:260px 1fr 240px;gap:34px;}
+  .cam-grid{display:grid;grid-template-columns:260px 1fr 330px;gap:30px;}
   .ctl{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
     border-bottom:1px solid var(--hair-soft);}
   .ctl label{color:var(--ink-dim);font-size:14px;}
   .ctl input,.ctl select{width:96px;text-align:right;}
-  #view{width:100%;border:1px solid var(--hair);background:#05070d;min-height:300px;
-    display:block;image-rendering:auto;}
+  /* 预览大图但封顶视口高度,object-fit 保比例不变形 → 直方图(右栏)与大图同屏 */
+  #view{width:100%;max-height:70vh;object-fit:contain;border:1px solid var(--hair);
+    background:#05070d;display:block;}
   .prog{height:2px;background:var(--hair);margin-top:10px;}
   .prog>div{height:2px;width:0;background:var(--gold);transition:width .3s;}
   /* 拉伸 + 直方图(对标 asiair:对数填充直方图 + MTF 拉伸,黑/中/白手柄拖动即时重渲染) */
@@ -82,15 +83,18 @@
       <canvas id="view"></canvas>
       <div class="prog"><div id="prog-bar"></div></div>
       <div id="cap-detail" style="font-size:13px;margin-top:8px;min-height:18px;color:var(--gold)"></div>
+      <button class="cap" id="btn-solve" style="margin-top:14px">板解算 · Plate Solve</button>
+    </div>
 
-      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">直方图 · 拉伸</h2>
+    <!-- 右:直方图·拉伸(右上)+ 传感器 -->
+    <aside class="rail">
+      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">直方图 · 拉伸</h2>
         <span class="en">Histogram · Stretch</span></div>
       <div class="st-wrap">
         <div class="st-tools">
           <button class="cap mini" id="st-stf">一键拉伸</button>
           <button class="cap mini" id="st-strong">强拉伸</button>
           <button class="cap mini" id="st-linear">线性</button>
-          <span class="muted" id="st-readout" style="margin-left:auto;font-size:11.5px">等待图像</span>
         </div>
         <div class="hist-box">
           <canvas id="hist"></canvas>
@@ -102,13 +106,9 @@
             <button class="st-h wht" id="h-white" type="button" title="白场"></button>
           </div>
         </div>
+        <div class="muted" id="st-readout" style="font-size:11px;margin-top:8px">等待图像</div>
       </div>
-      <button class="cap" id="btn-solve" style="margin-top:16px">板解算 · Plate Solve</button>
-    </div>
-
-    <!-- 右:传感器 -->
-    <aside class="rail">
-      <div class="sec-h" style="margin-top:0"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">传感器</h2></div>
       <div id="sensor">
         <div class="kv"><span class="k">型号</span><span class="v" id="s-name">—</span></div>
         <div class="kv"><span class="k">尺寸 <em>px</em></span><span class="v" id="s-size">--</span></div>
