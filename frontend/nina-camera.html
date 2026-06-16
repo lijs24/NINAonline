@@ -59,7 +59,8 @@
         <span class="en">Preview</span><span id="cap-state" class="muted" style="margin-left:auto;font-size:13px"></span></div>
       <img id="view" alt="预览">
       <div class="prog"><div id="prog-bar"></div></div>
-      <button class="cap" id="btn-solve" style="margin-top:14px">板解算 · Plate Solve</button>
+      <div id="cap-detail" class="muted" style="font-size:13px;margin-top:8px;min-height:18px"></div>
+      <button class="cap" id="btn-solve" style="margin-top:10px">板解算 · Plate Solve</button>
     </div>
 
     <!-- 右:传感器 + 直方图 -->
@@ -97,9 +98,11 @@ async function loadFilters(){
 
 async function refresh(){
   const c = await Ops.get("/api/camera");
-  document.getElementById("cap-state").textContent =
-    ({idle:"空闲",exposing:"曝光中",downloading:"下载中",error:"错误"})[c.state]||c.state;
-  document.getElementById("prog-bar").style.width = (c.progress*100||0)+"%";
+  if(!cap){   // 前端正在跟踪一次拍摄时,实时状态由状态机驱动,不被轮询覆盖
+    document.getElementById("cap-state").textContent =
+      ({idle:"空闲",exposing:"曝光中",downloading:"下载中",error:"错误"})[c.state]||c.state;
+    setProg(c.progress*100||0);
+  }
   document.getElementById("cool-stat").style.display = c.has_cooler ? "block" : "none";
   document.getElementById("cool-none").style.display = c.has_cooler ? "none" : "block";
   if(c.has_cooler){
@@ -117,14 +120,73 @@ async function refresh(){
   }
 }
 
+// ── 实时拍摄状态机 ──────────────────────────────────────────────
+// 后端拍摄是异步的、出图可能慢;前端据"点击→曝光时长→出图"自驱一个倒计时,
+// 让用户始终看到"曝光中 剩 X.Xs / 下载处理中 / 完成",而不是过早定格"空闲"。
+let cap = null, capTimer = null;
+function setProg(p){ document.getElementById("prog-bar").style.width = Math.max(0,Math.min(100,p))+"%"; }
+function setCap(s){ setT("cap-state", s); }
+function setDetail(s){ setT("cap-detail", s); }
+
+async function triggerCapture(mode){
+  if(!Ops.requireControl("camera")) return;
+  await pushControls();
+  const exp = +ctlVal("exp");
+  const d = await Ops.action("camera","capture",{exposure:exp,gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode});
+  if(d.ok){
+    cap = { exp, mode, t0: Date.now(), phase:"exposing", frame:(cap?cap.frame:0)+1, aborting:false };
+    clearInterval(capTimer); capTimer = setInterval(tickCapture, 100); tickCapture();
+    Ops.status("ok", mode==="loop" ? "循环拍摄中" : "开始曝光");
+  } else {
+    stopCapture("空闲");
+  }
+}
+function tickCapture(){
+  if(!cap) return;
+  const el = (Date.now()-cap.t0)/1000;
+  if(cap.phase==="exposing"){
+    if(el < cap.exp){
+      setProg(el/cap.exp*100);
+      setCap(`曝光中 · 剩 ${Math.max(0,cap.exp-el).toFixed(1)}s`);
+      setDetail(`第 ${cap.frame} 张 · ${cap.exp}s · 增益 ${ctlVal("gain")} · 合并 ${ctlVal("bin")}${cap.mode==="loop"?" · 循环":""}`);
+    } else { cap.phase="processing"; cap.procT0=Date.now(); setProg(100); }
+  }
+  if(cap.phase==="processing"){
+    const ps = (Date.now()-cap.procT0)/1000;
+    if(ps > Math.max(30, cap.exp)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("空闲"); return; }
+    setCap("下载 / 处理中…");
+    setDetail(`第 ${cap.frame} 张 · 曝光完成,正在下载与处理影像… ${ps.toFixed(0)}s`);
+  }
+}
+function stopCapture(label){
+  clearInterval(capTimer); capTimer = null; cap = null;
+  setProg(0); setCap(label||"空闲");
+}
+function onImageArrived(meta){
+  if(!cap) return;                                   // 非本前端发起的拍摄,交给轮询显示
+  setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星`);
+  if(cap.mode==="loop" && !cap.aborting){ triggerCapture("loop"); return; }  // 循环:前端驱动下一张
+  stopCapture("空闲");
+}
+
+// 带重试的取图:出图瞬间偶尔早于服务端就绪,onerror 退避重试,避免"破图"
+function showImage(id){
+  const v = document.getElementById("view"); v._rt = 0;
+  v.onerror = ()=>{ if(++v._rt <= 4) setTimeout(()=>{ v.src = `/api/camera/image?image_id=${id}&r=${v._rt}&t=${Date.now()}`; }, 600); };
+  v.onload  = ()=>{ v._rt = 0; };
+  v.src = `/api/camera/image?image_id=${id}&t=${Date.now()}`;
+}
+
 async function refreshImage(){
   const r = await Ops.get("/api/camera/current-image");
   if(!r.image) return;
   if(r.image.image_id !== lastImageId){
     lastImageId = r.image.image_id;
-    document.getElementById("view").src = `/api/camera/image?image_id=${lastImageId}&t=${Date.now()}`;
+    showImage(lastImageId);
     drawHist(r.image.histogram||[]);
-    Ops.status("ok", `新影像 #${lastImageId} · ${r.image.filter} ${r.image.exposure_s}s · HFR ${r.image.hfr} · ${r.image.stars} 星`);
+    const im = r.image;
+    Ops.status("ok", `新影像 #${lastImageId}${im.filter?" · "+im.filter:""}${im.exposure_s?" · "+im.exposure_s+"s":""} · HFR ${im.hfr} · ${im.stars} 星`);
+    onImageArrived(im);
   }
 }
 
@@ -139,21 +201,14 @@ function drawHist(h){
 
 function ctlVal(id){ return document.getElementById(id).value; }
 
-document.getElementById("btn-single").onclick = async ()=>{
-  if(!Ops.requireControl("camera")) return;
-  await pushControls();
-  const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"single"});
-  if(d.ok) Ops.status("ok","开始单张曝光");
-};
-document.getElementById("btn-loop").onclick = async ()=>{
-  if(!Ops.requireControl("camera")) return;
-  await pushControls();
-  const d = await Ops.action("camera","capture",{exposure:+ctlVal("exp"),gain:+ctlVal("gain"),bin:+ctlVal("bin"),mode:"loop"});
-  if(d.ok) Ops.status("ok","开始循环拍摄");
-};
+document.getElementById("btn-single").onclick = ()=>triggerCapture("single");
+document.getElementById("btn-loop").onclick = ()=>triggerCapture("loop");
 document.getElementById("btn-abort").onclick = async ()=>{
   if(!Ops.requireControl("camera")) return;
-  const d = await Ops.action("camera","abort",{}); if(d.ok) Ops.status("warn","已中止曝光");
+  if(cap) cap.aborting = true;
+  const d = await Ops.action("camera","abort",{});
+  stopCapture("已中止");
+  if(d.ok) Ops.status("warn","已中止曝光");
 };
 document.getElementById("btn-cool").onclick = async ()=>{
   if(!Ops.requireControl("camera")) return;

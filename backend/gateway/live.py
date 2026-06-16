@@ -57,6 +57,7 @@ class LiveGateway(NinaGateway):
         self._site = (settings.site_lat, settings.site_lng)
         self._ws_task: asyncio.Task | None = None
         self._stop = False
+        self._image_seq = 0          # 每收到一次 IMAGE-PREPARED 自增 → 作为"新图就绪"的真实信号
 
     async def start(self) -> None:
         self._ws_task = asyncio.create_task(self._ws_bridge())
@@ -211,19 +212,22 @@ class LiveGateway(NinaGateway):
                 bin=1, filter=last.get("Filter", ""), hfr=_f(last.get("HFR") or 0),
                 stars=int(last.get("Stars") or 0), captured_at=last.get("Date", ""),
                 image_url="/api/camera/image")
-        cam = await self._get("/equipment/camera/info")
-        if isinstance(cam, dict) and not cam.get("_error") and cam.get("ExposureEndTime"):
+        # 快照(未保存):只在真正收到 IMAGE-PREPARED(_image_seq 前进)后才报新图。
+        # 切忌用 ExposureEndTime —— NINA 在曝光"开始"就把它设为预计结束时间,会早报一拍
+        #(表现为"拍第二张时才刷出第一张")。
+        if self._image_seq > 0:
+            cam = await self._get("/equipment/camera/info")
             stats = await self._get("/equipment/camera/capture/statistics")
+            c = cam if isinstance(cam, dict) and not cam.get("_error") else {}
             s = stats if isinstance(stats, dict) and not stats.get("_error") else {}
-            eet = str(cam.get("ExposureEndTime"))
             return m.ImageMeta(
-                image_id=abs(hash(eet)) % 1_000_000,      # 每次新曝光 → 新 id,前端据此刷新预览
-                width=int(cam.get("XSize") or 0), height=int(cam.get("YSize") or 0),
-                exposure_s=0.0, gain=int(cam.get("Gain") or 0),
-                offset=int(cam.get("Offset") or 0), bin=int(cam.get("BinX") or 1),
+                image_id=self._image_seq,                 # 仅图像就绪时前进 → 前端据此刷新,不早报
+                width=int(c.get("XSize") or 0), height=int(c.get("YSize") or 0),
+                exposure_s=0.0, gain=int(c.get("Gain") or 0),
+                offset=int(c.get("Offset") or 0), bin=int(c.get("BinX") or 1),
                 filter="", hfr=_f(s.get("HFR") or 0),
                 stars=int(s.get("Stars") or s.get("DetectedStars") or 0),
-                captured_at=eet, image_url="/api/camera/image")
+                captured_at=str(c.get("ExposureEndTime") or ""), image_url="/api/camera/image")
         return None
 
     async def get_image_png(self, image_id=None, stretch=True) -> bytes | None:
@@ -519,6 +523,8 @@ class LiveGateway(NinaGateway):
                             resp = data.get("Response", data)
                             evt = resp.get("Event") if isinstance(resp, dict) else None
                             if evt:
+                                if evt in ("IMAGE-PREPARED", "IMAGE-SAVE"):
+                                    self._image_seq += 1   # 图像真正就绪
                                 self.bus.publish(evt, domain=_evt_domain(evt), data=resp)
             except Exception:
                 await asyncio.sleep(5.0)
