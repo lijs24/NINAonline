@@ -334,9 +334,13 @@ class LiveGateway(NinaGateway):
         return af
 
     async def focuser_action(self, action: str, p: dict) -> dict:
-        if action in ("move_abs", "move_rel"):
-            pos = p.get("position")
-            return _ok(await self._get("/equipment/focuser/move", position=pos))
+        if action == "move_abs":
+            return _ok(await self._get("/equipment/focuser/move", position=int(p.get("position", 0))))
+        if action == "move_rel":
+            # NINA 只接受绝对位:取当前位 + 相对步进
+            info = await self._get("/equipment/focuser/info")
+            cur = int((info or {}).get("Position") or 0) if isinstance(info, dict) else 0
+            return _ok(await self._get("/equipment/focuser/move", position=cur + int(p.get("steps", 0))))
         if action == "halt":
             return _ok(await self._get("/equipment/focuser/stop-move"))
         if action == "autofocus_start":

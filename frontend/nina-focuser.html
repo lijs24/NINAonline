@@ -120,7 +120,7 @@ async function refresh(){
     tc.textContent = f.temp_comp ? "关闭温度补偿" : "开启温度补偿";
     tc.classList.toggle("solid", !!f.temp_comp);
     tc.onclick = async ()=>{
-      if(!Ops.requireControl()) return;
+      if(!Ops.requireControl("focuser")) return;
       const d = await Ops.action("focuser","set_tempcomp",{on:!f.temp_comp});
       if(d.ok){ Ops.status("ok", f.temp_comp?"已关闭温度补偿":"已开启温度补偿"); refresh(); }
     };
@@ -212,29 +212,29 @@ function drawCurve(af){
 }
 
 document.getElementById("btn-abs").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("focuser")) return;
   const v = +document.getElementById("abs").value;
   if(isNaN(v)){ Ops.status("err","请先填写目标位置"); return; }
   const d = await Ops.action("focuser","move_abs",{position:v});
   if(d.ok) Ops.status("ok","移动至 "+v);
 };
 document.getElementById("btn-halt").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("focuser")) return;
   const d = await Ops.action("focuser","halt",{}); if(d.ok) Ops.status("warn","已停止调焦");
 };
 document.querySelectorAll("[data-step]").forEach(b=>b.onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("focuser")) return;
   const s = +b.dataset.step;
   const d = await Ops.action("focuser","move_rel",{steps:s});
   if(d.ok) Ops.status("ok","相对移动 "+(s>0?"+":"")+s);
 });
 document.getElementById("btn-af").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("focuser")) return;
   const d = await Ops.action("focuser","autofocus_start",{});
   if(d.ok) Ops.status("ok","自动对焦已开始");
 };
 document.getElementById("btn-af-cancel").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("focuser")) return;
   const d = await Ops.action("focuser","autofocus_cancel",{});
   if(d.ok) Ops.status("warn","已取消自动对焦");
 };
