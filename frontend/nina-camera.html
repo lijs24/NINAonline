@@ -124,6 +124,7 @@ async function refresh(){
 // 后端拍摄是异步的、出图可能慢;前端据"点击→曝光时长→出图"自驱一个倒计时,
 // 让用户始终看到"曝光中 剩 X.Xs / 下载处理中 / 完成",而不是过早定格"空闲"。
 let cap = null, capTimer = null;
+let procEst = 12;   // 下载+处理耗时估计(秒);NINA 不报真实进度,故用上一张实测值自校准
 function setProg(p){ document.getElementById("prog-bar").style.width = Math.max(0,Math.min(100,p))+"%"; }
 function setCap(s){ setT("cap-state", s); }
 function setDetail(s){ setT("cap-detail", s); }
@@ -141,22 +142,29 @@ async function triggerCapture(mode){
     stopCapture("空闲");
   }
 }
+// 进度条是"曝光 + 下载处理"的总进度(0→100%),两段按时长加权,故下载处理期也一直在走:
+//  · 曝光段:真实进度(已知曝光时长)
+//  · 处理段:NINA 无真实进度 → 按 procEst 估计,用渐近曲线推进、封顶 ~97%,出图即满 100%
+// 两段独立进度条:① 曝光 0→100% → ② 清零 → ③ 下载/处理 0→100%
 function tickCapture(){
   if(!cap) return;
   const el = (Date.now()-cap.t0)/1000;
   if(cap.phase==="exposing"){
     if(el < cap.exp){
-      setProg(el/cap.exp*100);
+      setProg(el/cap.exp*100);                       // 曝光段:0→100%
       setCap(`曝光中 · 剩 ${Math.max(0,cap.exp-el).toFixed(1)}s`);
       setDetail(`第 ${cap.frame} 张 · ${cap.exp}s · 增益 ${ctlVal("gain")} · 合并 ${ctlVal("bin")}${cap.mode==="loop"?" · 循环":""}`);
-    } else { cap.phase="processing"; cap.procT0=Date.now(); setProg(100); }
+      return;
+    }
+    cap.phase="processing"; cap.procT0=Date.now();
+    setProg(0);                                      // 曝光完成 → 进度条清零,转入下载/处理段
   }
-  if(cap.phase==="processing"){
-    const ps = (Date.now()-cap.procT0)/1000;
-    if(ps > Math.max(30, cap.exp)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("空闲"); return; }
-    setCap("下载 / 处理中…");
-    setDetail(`第 ${cap.frame} 张 · 曝光完成,正在下载与处理影像… ${ps.toFixed(0)}s`);
-  }
+  // 下载/处理段:独立 0→100%(NINA 无真实进度,按 procEst 渐近、封顶 ~97%,出图补满)
+  const ps = (Date.now()-cap.procT0)/1000;
+  if(ps > Math.max(45, procEst*4)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("空闲"); return; }
+  setProg(97 * (1 - Math.exp(-2.3*ps/Math.max(1,procEst))));   // 0→~97%(到估计点 ≈90%)
+  setCap("下载 / 处理中…");
+  setDetail(`第 ${cap.frame} 张 · 下载与处理影像… ${ps.toFixed(0)}s / 约 ${procEst.toFixed(0)}s`);
 }
 function stopCapture(label){
   clearInterval(capTimer); capTimer = null; cap = null;
@@ -164,9 +172,16 @@ function stopCapture(label){
 }
 function onImageArrived(meta){
   if(!cap) return;                                   // 非本前端发起的拍摄,交给轮询显示
-  setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星`);
+  if(cap.procT0){                                     // 用实测下载处理耗时平滑校准估计值
+    const measured = (Date.now()-cap.procT0)/1000;
+    procEst = Math.max(2, procEst*0.4 + measured*0.6);
+  }
+  setProg(100);
+  setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星 · 用时 ${((Date.now()-cap.t0)/1000).toFixed(0)}s`);
   if(cap.mode==="loop" && !cap.aborting){ triggerCapture("loop"); return; }  // 循环:前端驱动下一张
-  stopCapture("空闲");
+  clearInterval(capTimer); capTimer = null; cap = null;
+  setCap("空闲");
+  setTimeout(()=>{ if(!cap) setProg(0); }, 600);     // 100% 闪现后清零
 }
 
 // 带重试的取图:出图瞬间偶尔早于服务端就绪,onerror 退避重试,避免"破图"
