@@ -142,7 +142,7 @@ function renderSlots(fw){
       const pos = +s.dataset.pos;
       const live = await Ops.get("/api/filterwheel");
       if(pos===live.position){ Ops.status("ok","已是当前滤镜"); return; }
-      if(!Ops.requireControl()) return;
+      if(!Ops.requireControl("filterwheel")) return;
       const d = await Ops.action("filterwheel","change",{position:pos});
       if(d.ok) Ops.status("ok",`切换至 #${pos} ${live.filters.find(x=>x.position===pos).name}`);
     });
@@ -160,7 +160,7 @@ function renderSlots(fw){
 
 // —— 名称编辑 ——————————————————————————————————————————————
 document.getElementById("btn-rename").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("filterwheel")) return;
   const fw = await Ops.get("/api/filterwheel");
   if(!fw.connected || !fw.filters.length) return;
   editing = true;
@@ -182,7 +182,7 @@ document.getElementById("btn-cancel").onclick = ()=>{
   refresh();
 };
 document.getElementById("btn-save").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("filterwheel")) return;
   const names = Array.from(document.querySelectorAll(".nm-in"))
     .sort((a,b)=>(+a.dataset.pos)-(+b.dataset.pos))
     .map(i=>i.value.trim()||("F"+i.dataset.pos));
