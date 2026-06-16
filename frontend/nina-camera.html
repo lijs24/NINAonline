@@ -83,8 +83,15 @@
 <script src="/nina-theme.js"></script>
 <script>
 let lastImageId = null, filtersLoaded = false;
+let camChipW = 0, camChipH = 0, camBitDepth = 16;   // 传感器尺寸/位深,用于按 bin 估算单帧总大小
 // 只更新固定槽位的文字(asiair 式),不重建 DOM —— 切页/轮询都不闪、布局不动
 function setT(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; }
+// 单帧下载总大小(MB):传感器像素 ÷ bin² × 每像素字节(16bit→2)。bin 给定即可估算。
+function frameMB(bin){
+  const w = camChipW||9576, h = camChipH||6388, bpp = Math.max(1, Math.ceil((camBitDepth||16)/8));
+  bin = Math.max(1, bin||1);
+  return (Math.floor(w/bin) * Math.floor(h/bin) * bpp) / 1e6;
+}
 
 async function loadFilters(){
   const fw = await Ops.get("/api/filterwheel");
@@ -113,6 +120,7 @@ async function refresh(){
   document.getElementById("sensor").style.display = c.connected ? "block" : "none";
   document.getElementById("sensor-notice").style.display = c.connected ? "none" : "block";
   if(c.connected){
+    camChipW = c.chip_width||camChipW; camChipH = c.chip_height||camChipH; camBitDepth = c.bit_depth||camBitDepth;
     setT("s-name", c.sensor_name||c.name);
     setT("s-size", `${c.chip_width}×${c.chip_height}`);
     setT("s-pixel", c.pixel_size_um);
@@ -153,7 +161,8 @@ async function triggerCapture(mode){
     }
     if(d && d.ok){
       _frame++;
-      cap = { exp, mode, t0: Date.now(), phase:"exposing", frame:_frame, aborting:false };
+      cap = { exp, mode, t0: Date.now(), phase:"exposing", frame:_frame, aborting:false,
+              totalMB: frameMB(+ctlVal("bin")) };   // 按 bin 估算单帧总大小
       clearInterval(capTimer); capTimer = setInterval(tickCapture, 100); tickCapture();
       Ops.status("ok", mode==="loop" ? "循环拍摄中" : "开始曝光");
       started = true;
@@ -188,9 +197,12 @@ function tickCapture(){
   // 下载/处理段:独立 0→100%(NINA 无真实进度,按 procEst 渐近、封顶 ~97%,出图补满)
   const ps = (Date.now()-cap.procT0)/1000;
   if(ps > Math.max(60, procEst*4)){ Ops.status("warn","等待新影像超时,已结束"); stopCapture("超时结束"); return; }
-  setProg(97 * (1 - Math.exp(-2.3*ps/Math.max(1,procEst))));   // 0→~97%(到估计点 ≈90%)
-  setCap("下载 / 处理中…");
-  setDetail(`第 ${cap.frame} 张 · 下载与处理影像… ${ps.toFixed(0)}s / 约 ${procEst.toFixed(0)}s`);
+  // 下载/处理:总大小按 bin 估算(确定),已传与剩余按校准后的 procEst 推算
+  const frac = Math.min(0.999, ps/Math.max(1,procEst));
+  const total = cap.totalMB, remain = Math.max(0, Math.ceil(procEst - ps));
+  setProg(frac*100);
+  setCap(`下载处理中 · 剩 ${remain}s`);
+  setDetail(`第 ${cap.frame} 张 · ${(total*frac).toFixed(1)} / ${total.toFixed(1)} MB · 剩余 ${remain}s`);
 }
 function stopCapture(label){
   clearInterval(capTimer); capTimer = null; cap = null; starting = false; captureGen++; abortRequested = false;
@@ -205,7 +217,7 @@ function onImageArrived(meta){
     procEst = Math.max(2, procEst*0.4 + measured*0.6);
   }
   setProg(100);
-  setDetail(`第 ${cap.frame} 张完成 · HFR ${meta.hfr} · ${meta.stars} 星 · 用时 ${((Date.now()-cap.t0)/1000).toFixed(0)}s`);
+  setDetail(`第 ${cap.frame} 张完成 · ${cap.totalMB.toFixed(1)} MB · HFR ${meta.hfr} · ${meta.stars} 星 · 用时 ${((Date.now()-cap.t0)/1000).toFixed(0)}s`);
   const loop = cap.mode==="loop" && !cap.aborting && !abortRequested;
   clearInterval(capTimer); capTimer = null; cap = null;        // 先清,否则连点守卫会挡住循环续拍
   if(loop){ triggerCapture("loop"); return; }                  // 循环:前端驱动下一张
