@@ -398,6 +398,11 @@ class SimGateway(NinaGateway):
         g.rms_ra = round((sum(s.ra_dist ** 2 for s in recent) / len(recent)) ** 0.5, 3)
         g.rms_dec = round((sum(s.dec_dist ** 2 for s in recent) / len(recent)) ** 0.5, 3)
         g.rms_total = round((g.rms_ra ** 2 + g.rms_dec ** 2) ** 0.5, 3)
+        # PHD2 式星点指标(模拟):随导星质量小幅抖动
+        g.snr = round(max(3.0, 42 + random.uniform(-6, 6)), 1)
+        g.star_mass = round(28000 + random.uniform(-3000, 3000), 0)
+        g.hfd = round(2.6 + random.uniform(-0.2, 0.2), 2)
+        g.avg_dist = round(math.hypot(ra_raw, dec_raw) * 0.7, 3)
 
     def _tick_weather(self, dt: float) -> None:
         w = self.weather

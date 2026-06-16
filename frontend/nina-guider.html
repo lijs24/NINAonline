@@ -50,7 +50,14 @@
         <div class="kv"><span class="k">RMS 赤经 <em>RA ″</em></span><span class="v" id="g-info-rms-ra">--</span></div>
         <div class="kv"><span class="k">RMS 赤纬 <em>Dec ″</em></span><span class="v" id="g-info-rms-dec">--</span></div>
         <div class="kv"><span class="k">RMS 合计 <em>total ″</em></span><span class="v gold" id="g-info-rms-total">--</span></div>
+        <div class="kv"><span class="k">平均误差 <em>px</em></span><span class="v" id="g-info-avgdist">--</span></div>
         <div class="kv"><span class="k">像元比例 <em>″/px</em></span><span class="v" id="g-info-pixscale">--</span></div>
+      </div>
+      <div class="sec-h"><span class="rn">·</span><h2 style="font-size:16px">星点 <span class="en">Guide Star</span></h2></div>
+      <div id="star">
+        <div class="kv"><span class="k">信噪比 <em>SNR</em></span><span class="v gold" id="g-info-snr">--</span></div>
+        <div class="kv"><span class="k">星半径 <em>HFD px</em></span><span class="v" id="g-info-hfd">--</span></div>
+        <div class="kv"><span class="k">星质量 <em>mass</em></span><span class="v" id="g-info-mass">--</span></div>
         <div class="kv"><span class="k">导星器 <em>name</em></span><span class="v" id="g-info-name">—</span></div>
       </div>
     </aside>
@@ -88,7 +95,11 @@ async function refresh(){
   setT("g-info-rms-ra", g.rms_ra.toFixed(2));
   setT("g-info-rms-dec", g.rms_dec.toFixed(2));
   setT("g-info-rms-total", g.rms_total.toFixed(2));
+  setT("g-info-avgdist", (g.avg_dist||0)>0 ? g.avg_dist.toFixed(2) : "--");
   setT("g-info-pixscale", g.pixel_scale.toFixed(2));
+  setT("g-info-snr", (g.snr||0)>0 ? g.snr.toFixed(1) : "--");
+  setT("g-info-hfd", (g.hfd||0)>0 ? g.hfd.toFixed(2) : "--");
+  setT("g-info-mass", (g.star_mass||0)>0 ? Math.round(g.star_mass).toLocaleString() : "--");
   setT("g-info-name", g.name||"—");
 
   syncButtons(g);
@@ -165,23 +176,23 @@ function getCss(name){ return getComputedStyle(document.documentElement).getProp
 
 // -- 控制 -------------------------------------------------------------- //
 document.getElementById("btn-start").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("guider")) return;
   const d = await Ops.action("guider","start",{}); if(d.ok) Ops.status("ok","开始导星");
 };
 document.getElementById("btn-stop").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("guider")) return;
   const d = await Ops.action("guider","stop",{}); if(d.ok) Ops.status("warn","已停止导星");
 };
 document.getElementById("btn-dither").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("guider")) return;
   const d = await Ops.action("guider","dither",{}); if(d.ok) Ops.status("ok","开始抖动 · 稳定中");
 };
 document.getElementById("btn-autosel").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("guider")) return;
   const d = await Ops.action("guider","auto_select",{}); if(d.ok) Ops.status("ok","已自动选星");
 };
 document.getElementById("btn-clearcal").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("guider")) return;
   const d = await Ops.action("guider","clear_calibration",{}); if(d.ok) Ops.status("warn","已清除校准 · 下次导星将重新校准");
 };
 

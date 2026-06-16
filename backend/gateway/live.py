@@ -382,6 +382,13 @@ class LiveGateway(NinaGateway):
                 g.rms_ra = _f((rms.get("RA") or {}).get("Arcseconds") or 0)
                 g.rms_dec = _f((rms.get("Dec") or {}).get("Arcseconds") or 0)
                 g.rms_total = _f((rms.get("Total") or {}).get("Arcseconds") or 0)
+            # PHD2 逐帧指标:NINA 把它聚合进 LastGuideStep
+            ls = info.get("LastGuideStep") or {}
+            if ls:
+                g.snr = _f(ls.get("SNR"))
+                g.star_mass = _f(ls.get("StarMass"))
+                g.hfd = _f(ls.get("HFD"))
+                g.avg_dist = _f(ls.get("AvgDist"))
         return g
 
     async def get_guider_graph(self) -> list[m.GuideStep]:
@@ -403,6 +410,10 @@ class LiveGateway(NinaGateway):
             return _ok(await self._get("/equipment/guider/stop"))
         if action == "clear_calibration":
             return _ok(await self._get("/equipment/guider/clear-calibration"))
+        if action in ("dither", "auto_select"):
+            # NINA Advanced API 未提供独立端点:抖动在序列拍摄中自动进行;选星请在 PHD2 内操作。
+            return {"ok": False,
+                    "error": "NINA 接口不支持独立抖动/自动选星(抖动随序列自动进行,选星在 PHD2 内做)"}
         return {"ok": False, "error": f"live 未映射导星动作 {action}"}
 
     # -- 其余设备:尽力读 info,动作多数未在 NINA API 暴露 ----------------- #
