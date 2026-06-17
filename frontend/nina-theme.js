@@ -133,6 +133,10 @@
       if (!Ops.isController) { Ops.status("warn", "请先在右上角切到「主控」再操作"); return false; }
       return true;
     },
+    esc(s) {  // HTML 转义:设备名/目标名/滤镜名等经 innerHTML 渲染前先过它,防注入
+      return String(s == null ? "" : s).replace(/[&<>"']/g,
+        (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    },
 
     fmtRA(h) {
       h = ((h % 24) + 24) % 24; const hh = Math.floor(h), m = (h - hh) * 60,

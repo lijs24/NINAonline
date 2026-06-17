@@ -168,7 +168,7 @@ async function doSearch(){
   const ts = d.targets||[];
   document.getElementById("results").innerHTML = ts.map((t,i)=>
     `<div class="res" data-i="${i}">`
-    +`<span>${t.name} <em class="em muted">${t.type||''}</em></span>`
+    +`<span>${Ops.esc(t.name)} <em class="em muted">${Ops.esc(t.type||'')}</em></span>`
     +`<span class="v cel">${Ops.fmtRA(t.ra_hours)} ${Ops.fmtDec(t.dec_degrees)}</span></div>`).join("")
     || `<div class="muted em">无匹配</div>`;
   document.querySelectorAll(".res").forEach(el=>el.onclick=()=> pickTarget(ts[+el.dataset.i]));
@@ -176,7 +176,7 @@ async function doSearch(){
 
 async function pickTarget(t){
   if(!t) return;
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("framing")) return;
   selected = t;
   const d = await Ops.action("framing","set_coordinates",
     {target_name:t.name, ra:t.ra_hours, dec:t.dec_degrees});
@@ -194,14 +194,14 @@ document.getElementById("rot-slider").addEventListener("input",e=>onRotInput(+e.
 document.getElementById("rot-num").addEventListener("input",e=>onRotInput(+e.target.value));
 
 document.getElementById("btn-rot").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("framing")) return;
   const rotation = +document.getElementById("rot-num").value || 0;
   const d = await Ops.action("framing","set_rotation",{rotation});
   if(d.ok){ Ops.status("ok",`已设旋转角 ${(((rotation%360)+360)%360).toFixed(0)}°`); rotDirty=false; refresh(); }
 };
 
 document.getElementById("btn-slew").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("framing")) return;
   if(!cur || !cur.target_name){ Ops.status("err","请先检索并置入一个目标"); return; }
   const d = await Ops.action("framing","slew_center",{});
   if(d.ok) Ops.status("ok",`转向并居中 · ${cur.target_name}`);

@@ -111,8 +111,8 @@ function applyStatus(el, d){
   info.classList.remove("muted");
   // info 含「圆点 + 名称/未连接」复合标记 —— 保留 innerHTML(字段含可变名称与样式片段)
   info.innerHTML = d.connected
-    ? `<span class="dot on"></span> <span style="color:var(--gold)">${d.name}</span>`
-      + (d.detail?` · ${d.detail}`:"")
+    ? `<span class="dot on"></span> <span style="color:var(--gold)">${Ops.esc(d.name)}</span>`
+      + (d.detail?` · ${Ops.esc(d.detail)}`:"")
     : `<span class="dot"></span> 未连接`;
   el.querySelector(".btn-conn").disabled = !!d.connected;
   el.querySelector(".btn-disc").disabled = !d.connected;
@@ -128,7 +128,7 @@ function applyStatus(el, d){
 // 首屏:用聚合数据填好下拉 + 状态(一次成型)
 function applyDevice(el, d){
   el.querySelector(".driver").innerHTML =
-    (d.drivers||[]).map(dr=>`<option value="${dr.id}">${dr.name} · ${dr.category}</option>`).join("")
+    (d.drivers||[]).map(dr=>`<option value="${Ops.esc(dr.id)}">${Ops.esc(dr.name)} · ${Ops.esc(dr.category)}</option>`).join("")
     || `<option value="">无可用驱动</option>`;
   applyStatus(el, d);
 }

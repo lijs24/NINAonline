@@ -345,7 +345,7 @@ document.getElementById("btn-add-target").onclick = ()=>{
 
 // ---- 保存计划 ---------------------------------------------------------- //
 document.getElementById("btn-save").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("sequence")) return;
   const d = await Ops.post("/api/sequence/plan", { plan });
   if(d && d.ok) Ops.status("ok",`已保存计划「${plan.name}」· ${plan.targets.length} 目标`);
   else if(d && !d.locked) Ops.status("err", (d&&d.error) || "保存失败");
@@ -376,7 +376,7 @@ async function doSearch(){
 // ---- 运行控制 ---------------------------------------------------------- //
 function runAction(action, ok, warn){
   return async ()=>{
-    if(!Ops.requireControl()) return;
+    if(!Ops.requireControl("sequence")) return;
     const d = await Ops.action("sequence", action, {});
     if(d && d.ok) Ops.status(warn?"warn":"ok", warn||ok);
   };
@@ -386,7 +386,7 @@ document.getElementById("btn-pause").onclick  = runAction("pause",null,"序列�
 document.getElementById("btn-resume").onclick = runAction("resume","序列已继续");
 document.getElementById("btn-stop").onclick   = runAction("stop",null,"序列已停止");
 document.getElementById("btn-reset").onclick  = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("sequence")) return;
   const d = await Ops.action("sequence","reset",{});
   if(d && d.ok){ Ops.status("ok","序列已重置"); refresh(); }
 };

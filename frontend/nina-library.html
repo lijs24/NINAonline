@@ -99,12 +99,12 @@ async function refreshSummary(){
   const fk = Object.keys(byFilter);
   document.getElementById("s-by-filter").innerHTML = fk.length
     ? `<div class="kv"><span class="k">按滤镜 <em>by filter</em></span><span class="v muted"></span></div>`
-      + fk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byFilter[k]}</span></div>`).join("")
+      + fk.map(k=>`<div class="kv"><span class="k">　${Ops.esc(k)}</span><span class="v gold">${byFilter[k]}</span></div>`).join("")
     : "";
   const tk = Object.keys(byTarget);
   document.getElementById("s-by-target").innerHTML = tk.length
     ? `<div class="kv"><span class="k">按目标 <em>by target</em></span><span class="v muted"></span></div>`
-      + tk.map(k=>`<div class="kv"><span class="k">　${k}</span><span class="v gold">${byTarget[k]}</span></div>`).join("")
+      + tk.map(k=>`<div class="kv"><span class="k">　${Ops.esc(k)}</span><span class="v gold">${byTarget[k]}</span></div>`).join("")
     : "";
 
   // 过滤下拉(保留当前选择)
@@ -135,7 +135,7 @@ async function refreshList(){
   grid.innerHTML = items.map(im=>
      `<div class="cell${im.image_id===selId?' sel':''}" data-id="${im.image_id}">`
     +`<img loading="lazy" src="/api/library/thumb?image_id=${im.image_id}" alt="#${im.image_id}">`
-    +`<div class="cap-cn">${im.filter||'—'} · ${im.exposure_s}s · HFR ${(+im.hfr).toFixed(2)}</div></div>`).join("");
+    +`<div class="cap-cn">${Ops.esc(im.filter||'—')} · ${im.exposure_s}s · HFR ${(+im.hfr).toFixed(2)}</div></div>`).join("");
   grid.querySelectorAll(".cell").forEach(el=>{
     el.onclick = ()=> selectImage(+el.dataset.id, items.find(x=>x.image_id===+el.dataset.id));
   });

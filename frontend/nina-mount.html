@@ -180,8 +180,8 @@ async function doSearch(){
   const q = document.getElementById("q").value;
   const d = await Ops.get(`/api/framing/search?q=${encodeURIComponent(q)}`);
   document.getElementById("results").innerHTML = (d.targets||[]).map(t=>
-    `<div class="res" data-ra="${t.ra_hours}" data-dec="${t.dec_degrees}" data-name="${t.name}">`
-    +`<span>${t.name} <em class="em muted">${t.type}</em></span>`
+    `<div class="res" data-ra="${t.ra_hours}" data-dec="${t.dec_degrees}" data-name="${Ops.esc(t.name)}">`
+    +`<span>${Ops.esc(t.name)} <em class="em muted">${Ops.esc(t.type)}</em></span>`
     +`<span class="v cel">${Ops.fmtRA(t.ra_hours)} ${Ops.fmtDec(t.dec_degrees)}</span></div>`).join("")
     || `<div class="muted em">无匹配</div>`;
   document.querySelectorAll(".res").forEach(el=>el.onclick=()=>{
@@ -193,20 +193,20 @@ async function doSearch(){
 }
 
 document.getElementById("btn-goto").onclick = async ()=>{
-  if(!Ops.requireControl()) return;
+  if(!Ops.requireControl("mount")) return;
   const ra=+document.getElementById("ra").value, dec=+document.getElementById("dec").value;
   if(isNaN(ra)||isNaN(dec)){ Ops.status("err","请先填写或检索目标坐标"); return; }
   const d = await Ops.action("mount","slew",{ra,dec,target_name:document.getElementById("ra").dataset.name||"手动目标"});
   if(d.ok) Ops.status("ok","开始转向"); else if(d.error) Ops.status(d.blocked?"warn":"err",d.error);
 };
-document.getElementById("btn-stop").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","stop",{}); if(d.ok)Ops.status("warn","已停止转向");} };
-document.getElementById("btn-track").onclick = async ()=>{ if(!Ops.requireControl())return; const m=await Ops.get("/api/mount"); const d=await Ops.action("mount","set_tracking",{on:!m.tracking}); if(d.ok)Ops.status("ok",m.tracking?"已停止跟踪":"已开启跟踪"); };
-document.getElementById("btn-park").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","park",{}); if(d.ok)Ops.status("ok","正在停靠");} };
-document.getElementById("btn-unpark").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","unpark",{}); if(d.ok)Ops.status("ok","已解锁");} };
-document.getElementById("btn-home").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","home",{}); if(d.ok)Ops.status("ok","正在归位");} };
-document.getElementById("btn-flip").onclick = async ()=>{ if(Ops.requireControl()){const d=await Ops.action("mount","flip",{}); if(d.ok)Ops.status("ok","子午翻转中");} };
+document.getElementById("btn-stop").onclick = async ()=>{ if(Ops.requireControl("mount")){const d=await Ops.action("mount","stop",{}); if(d.ok)Ops.status("warn","已停止转向");} };
+document.getElementById("btn-track").onclick = async ()=>{ if(!Ops.requireControl("mount"))return; const m=await Ops.get("/api/mount"); const d=await Ops.action("mount","set_tracking",{on:!m.tracking}); if(d.ok)Ops.status("ok",m.tracking?"已停止跟踪":"已开启跟踪"); };
+document.getElementById("btn-park").onclick = async ()=>{ if(Ops.requireControl("mount")){const d=await Ops.action("mount","park",{}); if(d.ok)Ops.status("ok","正在停靠");} };
+document.getElementById("btn-unpark").onclick = async ()=>{ if(Ops.requireControl("mount")){const d=await Ops.action("mount","unpark",{}); if(d.ok)Ops.status("ok","已解锁");} };
+document.getElementById("btn-home").onclick = async ()=>{ if(Ops.requireControl("mount")){const d=await Ops.action("mount","home",{}); if(d.ok)Ops.status("ok","正在归位");} };
+document.getElementById("btn-flip").onclick = async ()=>{ if(Ops.requireControl("mount")){const d=await Ops.action("mount","flip",{}); if(d.ok)Ops.status("ok","子午翻转中");} };
 document.querySelectorAll(".pad button").forEach(b=>b.onclick=async ()=>{
-  if(!Ops.requireControl())return;
+  if(!Ops.requireControl("mount"))return;
   await Ops.action("mount","move_axis",{direction:b.dataset.dir,rate:0.5});
 });
 
