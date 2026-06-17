@@ -51,11 +51,14 @@
 
         <div class="sec-h"><span class="rn">Ⅲ</span><h2>控制</h2><span class="en">Control</span></div>
         <div class="ctls">
+          <button class="cap" id="btn-loop">连续曝光</button>
+          <button class="cap" id="btn-autosel">自动选星</button>
           <button class="cap" id="btn-start">开始导星</button>
           <button class="cap danger" id="btn-stop">停止</button>
           <button class="cap" id="btn-dither">抖动</button>
-          <button class="cap" id="btn-autosel">自动选星</button>
           <button class="cap" id="btn-clearcal">清除校准</button>
+          <span style="display:inline-flex;align-items:center;gap:6px;color:var(--ink-dim);font-size:13px">曝光
+            <select class="fld" id="g-exp" style="font-size:13px;padding:4px 10px"></select></span>
         </div>
       </div>
     </div>
@@ -119,6 +122,8 @@ async function refresh(){
   setT("g-info-hfd", (g.hfd||0)>0 ? g.hfd.toFixed(2) : "--");
   setT("g-info-mass", (g.star_mass||0)>0 ? Math.round(g.star_mass).toLocaleString() : "--");
   setT("g-info-name", g.name||"—");
+  const exp=document.getElementById("g-exp");   // 同步当前曝光(用户正在选时不打断)
+  if(exp && g.exposure>0 && document.activeElement!==exp) exp.value=String(g.exposure);
 
   syncButtons(g);
 }
@@ -132,6 +137,7 @@ function syncButtons(g){
   btn("btn-dither").disabled = !guiding || g.settling || !g.can_dither;
   btn("btn-autosel").disabled = guiding || g.state === "calibrating";
   btn("btn-clearcal").disabled = guiding || g.state === "calibrating";
+  btn("btn-loop").disabled = g.state === "calibrating";
 }
 
 async function refreshGraph(){
@@ -244,7 +250,7 @@ function drawStar(im, r){
 // -- 控制 -------------------------------------------------------------- //
 document.getElementById("btn-start").onclick = async ()=>{
   if(!Ops.requireControl("guider")) return;
-  const d = await Ops.action("guider","start",{}); if(d.ok) Ops.status("ok","开始导星");
+  const d = await Ops.action("guider","start",{}); if(d.ok) Ops.status("ok","开始导星"); else if(d.error) Ops.status("err",d.error);
 };
 document.getElementById("btn-stop").onclick = async ()=>{
   if(!Ops.requireControl("guider")) return;
@@ -256,12 +262,28 @@ document.getElementById("btn-dither").onclick = async ()=>{
 };
 document.getElementById("btn-autosel").onclick = async ()=>{
   if(!Ops.requireControl("guider")) return;
-  const d = await Ops.action("guider","auto_select",{}); if(d.ok) Ops.status("ok","已自动选星");
+  const d = await Ops.action("guider","auto_select",{}); if(d.ok) Ops.status("ok","已自动选星"+(Array.isArray(d.star_pos)?(" @ "+d.star_pos.map(x=>Math.round(x)).join(",")):"")); else if(d.error) Ops.status("err",d.error);
 };
 document.getElementById("btn-clearcal").onclick = async ()=>{
   if(!Ops.requireControl("guider")) return;
-  const d = await Ops.action("guider","clear_calibration",{}); if(d.ok) Ops.status("warn","已清除校准 · 下次导星将重新校准");
+  const d = await Ops.action("guider","clear_calibration",{}); if(d.ok) Ops.status("warn","已清除校准 · 下次导星将重新校准"); else if(d.error) Ops.status("err",d.error);
 };
+document.getElementById("btn-loop").onclick = async ()=>{
+  if(!Ops.requireControl("guider")) return;
+  const d = await Ops.action("guider","loop",{}); if(d.ok) Ops.status("ok","开始连续曝光"); else if(d.error) Ops.status("err",d.error);
+};
+// 曝光档位下拉(10ms–30s)
+(function(){
+  const sel=document.getElementById("g-exp"); if(!sel) return;
+  const fmt=ms=>ms<1000?ms+"ms":(ms/1000)+"s";
+  sel.innerHTML=[10,20,50,100,200,500,1000,1500,2000,2500,3000,3500,4000,4500,5000,6000,7000,8000,9000,10000,15000,30000]
+    .map(ms=>`<option value="${ms}">${fmt(ms)}</option>`).join("");
+  sel.onchange=async (e)=>{
+    if(!Ops.requireControl("guider")) return;
+    const ms=+e.target.value;
+    const d=await Ops.action("guider","set_exposure",{ms}); if(d.ok) Ops.status("ok","导星曝光 "+fmt(ms)); else if(d.error) Ops.status("err",d.error);
+  };
+})();
 
 document.addEventListener("ops:ready", ()=>{ refresh().then(refreshGraph).then(refreshStarImage); });
 Ops.onEvent((e)=>{

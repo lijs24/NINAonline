@@ -233,6 +233,7 @@ class GuiderState(BaseModel):
     star_mass: float = 0.0               # 星质量(亮度)
     hfd: float = 0.0                     # 星半径(半通量直径,像素)
     avg_dist: float = 0.0                # 平均误差(像素)
+    exposure: int = 0                    # 导星曝光(毫秒,PHD2 get_exposure)
 
 
 # --------------------------------------------------------------------------- #

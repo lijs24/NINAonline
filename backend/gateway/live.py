@@ -435,6 +435,10 @@ class LiveGateway(NinaGateway):
                 g.star_mass = _f(ls.get("StarMass"))
                 g.hfd = _f(ls.get("HFD"))
                 g.avg_dist = _f(ls.get("AvgDist"))
+        if g.connected:                       # 导星曝光由 PHD2 直读(NINA 不暴露)
+            ex = await self._phd2_rpc("get_exposure")
+            if isinstance(ex, dict) and isinstance(ex.get("result"), (int, float)):
+                g.exposure = int(ex["result"])
         return g
 
     async def get_guider_graph(self) -> list[m.GuideStep]:
@@ -449,25 +453,42 @@ class LiveGateway(NinaGateway):
                     dec_dist=_f(pt.get("DECDistanceRaw") or 0)))
         return steps
 
+    async def _phd2_cmd(self, method: str, params=None) -> dict:
+        """跑一条 PHD2 命令并归一成 {ok, error, result}。"""
+        r = await self._phd2_rpc(method, params)
+        if r is None:
+            return {"ok": False, "error": "PHD2 不可达(检查 PHD2 服务器是否开启/已连接)"}
+        if isinstance(r, dict) and r.get("error"):
+            e = r["error"]; msg = (e.get("message") if isinstance(e, dict) else str(e)) or "失败"
+            return {"ok": False, "error": f"PHD2:{msg}"}
+        return {"ok": True, "result": (r or {}).get("result")}
+
     async def guider_action(self, action: str, p: dict) -> dict:
-        if action == "start":
-            return _ok(await self._get("/equipment/guider/start"))
-        if action == "stop":
-            return _ok(await self._get("/equipment/guider/stop"))
+        # PHD2 直控,对应 PHD2 面板按钮;clear_calibration 仍走 NINA。
+        SETTLE = {"pixels": 1.5, "time": 8, "timeout": 40}
+        if action == "loop":                        # 开始连续曝光
+            return await self._phd2_cmd("loop")
+        if action in ("auto_select", "find_star"):  # 自动选星(需正在 Looping)
+            r = await self._phd2_cmd("find_star")
+            if not r["ok"] and "find star" in (r.get("error") or "").lower():
+                r["error"] = "PHD2 找不到星(确认正在连续曝光、画面有可选星)"
+            elif r["ok"]:
+                r["star_pos"] = r.get("result")
+            return r
+        if action in ("start", "guide"):            # 开始导星(自动选星+校准+导星+稳定)
+            return await self._phd2_cmd("guide", {"settle": SETTLE, "recalibrate": bool(p.get("recalibrate", False))})
+        if action in ("stop", "stop_capture"):      # 停止拍照/导星(停 looping + guiding)
+            return await self._phd2_cmd("stop_capture")
+        if action == "dither":                       # 抖动
+            return await self._phd2_cmd("dither", {"amount": _f(p.get("amount", 3)) or 3.0,
+                                                   "raOnly": bool(p.get("ra_only", False)), "settle": SETTLE})
+        if action == "set_exposure":                 # 设置导星曝光(毫秒)
+            ms = int(_f(p.get("ms") if p.get("ms") is not None else p.get("exposure")))
+            if ms <= 0:
+                return {"ok": False, "error": "曝光时间(ms)无效"}
+            return await self._phd2_cmd("set_exposure", [ms])
         if action == "clear_calibration":
             return _ok(await self._get("/equipment/guider/clear-calibration"))
-        if action in ("auto_select", "find_star"):
-            # 直连 PHD2 调 find_star(= PHD2「自动选星」按钮)。需 PHD2 正在 Looping 才有画面可选。
-            r = await self._phd2_rpc("find_star")
-            if r is None:
-                return {"ok": False, "error": "PHD2 不可达(检查 PHD2 服务器是否开启/已连接)"}
-            if isinstance(r, dict) and r.get("error"):
-                e = r["error"]; msg = (e.get("message") if isinstance(e, dict) else str(e)) or "失败"
-                return {"ok": False, "error": f"PHD2 自动选星失败:{msg}(确认 PHD2 正在 Looping)"}
-            return {"ok": True, "star_pos": (r or {}).get("result")}
-        if action == "dither":
-            # NINA Advanced API 无独立抖动端点;抖动在序列拍摄中自动进行。
-            return {"ok": False, "error": "NINA 接口不支持独立抖动(抖动随序列自动进行)"}
         return {"ok": False, "error": f"live 未映射导星动作 {action}"}
 
     # -- 导星画面:直连 PHD2 事件服务器(TCP),行分隔 JSON-RPC ------------- #
