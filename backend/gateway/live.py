@@ -456,10 +456,18 @@ class LiveGateway(NinaGateway):
             return _ok(await self._get("/equipment/guider/stop"))
         if action == "clear_calibration":
             return _ok(await self._get("/equipment/guider/clear-calibration"))
-        if action in ("dither", "auto_select"):
-            # NINA Advanced API 未提供独立端点:抖动在序列拍摄中自动进行;选星请在 PHD2 内操作。
-            return {"ok": False,
-                    "error": "NINA 接口不支持独立抖动/自动选星(抖动随序列自动进行,选星在 PHD2 内做)"}
+        if action in ("auto_select", "find_star"):
+            # 直连 PHD2 调 find_star(= PHD2「自动选星」按钮)。需 PHD2 正在 Looping 才有画面可选。
+            r = await self._phd2_rpc("find_star")
+            if r is None:
+                return {"ok": False, "error": "PHD2 不可达(检查 PHD2 服务器是否开启/已连接)"}
+            if isinstance(r, dict) and r.get("error"):
+                e = r["error"]; msg = (e.get("message") if isinstance(e, dict) else str(e)) or "失败"
+                return {"ok": False, "error": f"PHD2 自动选星失败:{msg}(确认 PHD2 正在 Looping)"}
+            return {"ok": True, "star_pos": (r or {}).get("result")}
+        if action == "dither":
+            # NINA Advanced API 无独立抖动端点;抖动在序列拍摄中自动进行。
+            return {"ok": False, "error": "NINA 接口不支持独立抖动(抖动随序列自动进行)"}
         return {"ok": False, "error": f"live 未映射导星动作 {action}"}
 
     # -- 导星画面:直连 PHD2 事件服务器(TCP),行分隔 JSON-RPC ------------- #
