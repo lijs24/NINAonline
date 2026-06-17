@@ -612,14 +612,29 @@ class LiveGateway(NinaGateway):
         return {"ok": False, "error": "live 未映射开关动作"}
 
     async def platesolve(self) -> m.PlateSolveResult:
-        resp = await self._get("/prepared-image/solve")
-        if isinstance(resp, dict) and not resp.get("_error"):
+        # ninaAPI 2.2.11.x 没有 /prepared-image/solve(2.2.15 才加),用旧版也支持的
+        # capture+solve+omitImage:拍摄即解算、只回解算结果不含图,新旧版本都兼容。
+        # 拍摄+解算耗时长(~15-20s),单独用长超时,不走默认 8s 的 _client 超时。
+        try:
+            r = await self._client.get(
+                self._api + "/equipment/camera/capture",
+                params={"solve": "true", "omitImage": "true", "getResult": "true"},
+                timeout=httpx.Timeout(90.0, connect=5.0))
+            data = r.json()
+        except Exception as e:
+            return m.PlateSolveResult(ok=False, solved=False, error=f"板解算调用失败:{e}")
+        if not (isinstance(data, dict) and data.get("Success")):
+            err = data.get("Error") if isinstance(data, dict) else None
+            return m.PlateSolveResult(ok=False, solved=False, error=err or "NINA 板解算调用失败")
+        psr = ((data.get("Response") or {}).get("PlateSolveResult")) or {}
+        if psr.get("Success"):
+            c = psr.get("Coordinates") or {}
             return m.PlateSolveResult(
-                ok=True, solved=bool(resp.get("Success", True)),
-                ra_hours=_f((resp.get("Coordinates") or {}).get("RA") or 0),
-                dec_degrees=_f((resp.get("Coordinates") or {}).get("Dec") or 0),
-                rotation=_f(resp.get("PositionAngle") or 0))
-        return m.PlateSolveResult(ok=False, error="NINA 板解算失败或无可解图像")
+                ok=True, solved=True,
+                ra_hours=_f(c.get("RA") or 0),
+                dec_degrees=_f(c.get("Dec") or 0),
+                rotation=_f(psr.get("PositionAngle") or 0))
+        return m.PlateSolveResult(ok=False, solved=False, error="解算未成功(星点不足/无解)")
 
     async def get_conditions(self) -> dict:
         sun = astro.sun_altitude(self._site[0], self._site[1])
