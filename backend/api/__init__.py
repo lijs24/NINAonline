@@ -88,14 +88,14 @@ async def equipment_list(request: Request, device_type: str):
 
 @router.post("/equipment/{device_type}/connect")
 async def equipment_connect(request: Request, device_type: str, body: dict = Body(default={})):
-    if (err := await _guard(request, body)):
+    if (err := await _guard(request, body, device_type)):   # 按设备域解禁(如 NINAWEB_WRITABLE_DOMAINS=camera 可连相机)
         return JSONResponse(err, status_code=423)
     return await _gw(request).connect(device_type, body.get("driver_id"))
 
 
 @router.post("/equipment/{device_type}/disconnect")
 async def equipment_disconnect(request: Request, device_type: str, body: dict = Body(default={})):
-    if (err := await _guard(request, body)):
+    if (err := await _guard(request, body, device_type)):
         return JSONResponse(err, status_code=423)
     return await _gw(request).disconnect(device_type)
 
@@ -125,7 +125,11 @@ async def _do_action(request: Request, fn_name: str, body: dict):
     action = (body or {}).get("action", "")
     params = (body or {}).get("params", {}) or {}
     fn = getattr(_gw(request), fn_name)
-    return await fn(action, params)
+    try:
+        return await fn(action, params)
+    except (ValueError, TypeError, KeyError) as e:
+        # 坏参数(数值转换失败等)归一成 400,而不是冒成 500
+        return JSONResponse({"ok": False, "error": f"参数错误:{e}"}, status_code=400)
 
 
 def _state_route(domain: str, getter: str):

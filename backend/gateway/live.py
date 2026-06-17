@@ -646,6 +646,9 @@ class LiveGateway(NinaGateway):
                              "并确认 NINA 已配好安全机制"}
         if action in mp:
             return _ok(await self._get(mp[action]))
+        if action == "set_plan":
+            return {"ok": False, "unsupported": True,
+                    "error": "live 暂不支持从本站保存序列计划 —— 请在 NINA 端编排/加载序列(本站仅 start/stop/reset)"}
         return {"ok": False, "error": f"live 未映射序列动作 {action}"}
 
     async def get_framing(self) -> m.FramingState:
