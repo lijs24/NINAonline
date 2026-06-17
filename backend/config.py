@@ -61,6 +61,9 @@ class Settings:
     # <=0 关闭。依赖 ASCOM SideOfPier 约定(pierEast=镜在东·常态看西 HA>0;pierWest 反之),
     # 不同驱动可能相反 —— 务必保留 NINA 自身中天翻转作权威保护,并用一次已知指向核对方向。
     mount_meridian_limit_deg: float = float(os.environ.get("NINAWEB_MOUNT_MERIDIAN_LIMIT_DEG", "0"))
+    # 远程启动序列:默认禁用(序列内 GOTO 在 NINA 内执行,不经本站 _slew_safety 护栏,
+    # 只能靠 NINA 自身中天翻转/限位)。确需远程一键启动且已在 NINA 配好安全机制时设为 1。
+    allow_sequence_start: bool = _bool("NINAWEB_ALLOW_SEQUENCE_START", False)
 
     # 协作锁租约(秒)
     control_lease_seconds: int = 45

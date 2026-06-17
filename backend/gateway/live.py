@@ -295,13 +295,24 @@ class LiveGateway(NinaGateway):
           1) 目标地平高度 < mount_min_alt_deg → 拒绝(防低空撞腿/朝地)。
           2) mount_meridian_limit_deg>0 时,目标在当前墩侧越过中天进入配重上扬区超过该角度 → 拒绝。
         读不到赤道仪状态一律拒绝(fail-safe)。park/home/stop/tracking/sync/flip 不经此校验。"""
-        if ra is None or dec is None:
-            return {"ok": False, "blocked": True, "error": "护栏:slew 缺少 ra/dec,已拒绝"}
+        def _num(v):
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None
+            return f if math.isfinite(f) else None
+        # 1) 目标坐标必须合法:RA∈[0,24) Dec∈[-90,90];缺失/越界/非数 → fail-safe 拒绝
+        ra, dec = _num(ra), _num(dec)
+        if ra is None or dec is None or not (0 <= ra < 24) or not (-90 <= dec <= 90):
+            return {"ok": False, "blocked": True, "error": "护栏:slew 目标坐标缺失/越界,已拒绝"}
         info = await self._get("/equipment/mount/info")
         if not isinstance(info, dict) or info.get("_error") or not info.get("Connected"):
             return {"ok": False, "blocked": True, "error": "护栏:读不到赤道仪状态,安全起见拒绝转向"}
-        lat, lst = _f(info.get("SiteLatitude")), _f(info.get("SiderealTime"))
-        ra, dec = _f(ra), _f(dec)
+        # 2) 站纬/恒星时必须有效(不再用 _f 折成 0 蒙混);无效 → 无法核算高度 → 拒绝
+        lat, lst = _num(info.get("SiteLatitude")), _num(info.get("SiderealTime"))
+        if lat is None or not (-90 <= lat <= 90) or lst is None or not (0 <= lst < 24):
+            return {"ok": False, "blocked": True,
+                    "error": "护栏:赤道仪站纬/恒星时无效,无法核算安全高度 —— 拒绝转向"}
         ha_deg = (((lst - ra + 12) % 24) - 12) * 15.0      # >0=已过中天(西), <0=未过(东)
         ha, latr, decr = math.radians(ha_deg), math.radians(lat), math.radians(dec)
         sin_alt = math.sin(decr) * math.sin(latr) + math.cos(decr) * math.cos(latr) * math.cos(ha)
@@ -312,9 +323,13 @@ class LiveGateway(NinaGateway):
         lim = self.s.mount_meridian_limit_deg
         if lim and lim > 0:
             side = str(info.get("SideOfPier", "")).lower().replace("pier", "")
+            # 3) 中天限位启用但墩侧未知 → fail-closed(否则方向判断不可靠会放过危险侧)
+            if side not in ("east", "west"):
+                return {"ok": False, "blocked": True,
+                        "error": "护栏:中天限位已启用但赤道仪墩侧(SideOfPier)未知 —— fail-safe 拒绝转向"}
             if (side == "west" and ha_deg > lim) or (side == "east" and ha_deg < -lim):
                 return {"ok": False, "blocked": True,
-                        "error": f"护栏拦截:目标过中天 {ha_deg:+.1f}°(墩侧={side or '未知'},限位 {lim:.0f}°),"
+                        "error": f"护栏拦截:目标过中天 {ha_deg:+.1f}°(墩侧={side},限位 {lim:.0f}°),"
                                  f"配重上扬/打腿风险 —— 拒绝转向,请先在 NINA 翻转或确认安全"}
         return None
 
@@ -623,6 +638,12 @@ class LiveGateway(NinaGateway):
 
     async def sequence_action(self, action: str, p: dict) -> dict:
         mp = {"start": "/sequence/start", "stop": "/sequence/stop", "reset": "/sequence/reset"}
+        # 远程启动序列默认禁用:序列内 GOTO 在 NINA 内部执行,不经本站 _slew_safety 护栏
+        if action == "start" and not self.s.allow_sequence_start:
+            return {"ok": False, "blocked": True,
+                    "error": "护栏:远程启动序列默认禁用 —— 序列内 GOTO 不经本站赤道仪护栏,"
+                             "只能靠 NINA 自身中天翻转/限位。确需远程启动请设 NINAWEB_ALLOW_SEQUENCE_START=1 "
+                             "并确认 NINA 已配好安全机制"}
         if action in mp:
             return _ok(await self._get(mp[action]))
         return {"ok": False, "error": f"live 未映射序列动作 {action}"}
@@ -632,9 +653,17 @@ class LiveGateway(NinaGateway):
 
     async def framing_action(self, action: str, p: dict) -> dict:
         if action == "set_coordinates":
+            self._framing_target = (p.get("ra"), p.get("dec"))   # 记住构图目标,供 slew_center 护栏核算
             return _ok(await self._get("/framing/set-coordinates",
                                        ra=p.get("ra"), dec=p.get("dec")))
         if action == "slew_center":
+            # 构图页"转向并居中"会移动赤道仪 → 必须经 _slew_safety(防绕过护栏打腿)
+            tgt = getattr(self, "_framing_target", None)
+            if not tgt or tgt[0] is None or tgt[1] is None:
+                return {"ok": False, "blocked": True,
+                        "error": "护栏:未知构图目标坐标,请先「设置构图坐标」再转向(防打腿)"}
+            if (err := await self._slew_safety(tgt[0], tgt[1])) is not None:
+                return err
             return _ok(await self._get("/framing/slew", option="center"))
         return {"ok": False, "error": "live 未映射"}
 

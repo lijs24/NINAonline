@@ -60,6 +60,13 @@ async def status(request: Request):
         "writable_domains": sorted(s.writable_domains),   # 只读下仍可控的域(按域解禁)
         "server_time": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
         "site": {"lat": s.site_lat, "lng": s.site_lng, "elev": s.site_elev},
+        # 赤道仪护栏现状(便于一眼确认防打腿是否真生效,而非误以为已开)
+        "mount_guard": {
+            "min_alt_deg": s.mount_min_alt_deg,
+            "meridian_limit_deg": s.mount_meridian_limit_deg,
+            "meridian_enabled": s.mount_meridian_limit_deg > 0,
+            "allow_sequence_start": s.allow_sequence_start,
+        },
         "connected_devices": connected,
         "device_count": len(summaries),
         "rig": "remote-rig-1",

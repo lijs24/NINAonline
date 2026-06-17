@@ -19,8 +19,9 @@ class Holder:
     expires: float
 
     def view(self) -> dict:
-        return {"session_id": self.session_id, "display_name": self.label,
-                "client_ip": self.client_ip}
+        # 不外泄 session_id —— 否则任何监控端读到后即可冒充主控通过 _guard。
+        # 前端判角色用服务端算好的 held_by_self,展示只需 名称/IP。
+        return {"display_name": self.label, "client_ip": self.client_ip}
 
 
 class ControlLock:
