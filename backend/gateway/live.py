@@ -338,7 +338,7 @@ class LiveGateway(NinaGateway):
             if (err := await self._slew_safety(p.get("ra"), p.get("dec"))) is not None:
                 return err
             return _ok(await self._get("/equipment/mount/slew",
-                                       ra=p.get("ra"), dec=p.get("dec")))
+                                       ra=_f(p.get("ra")) * 15.0, dec=p.get("dec")))   # ninaAPI 写接口 RA 用「度」;本站存小时 → ×15
         if action == "park":
             return _ok(await self._get("/equipment/mount/park"))
         if action == "unpark":
@@ -353,7 +353,7 @@ class LiveGateway(NinaGateway):
             return _ok(await self._get("/equipment/mount/tracking",
                                        enabled=str(bool(p.get("on", True))).lower()))
         if action == "sync":
-            return _ok(await self._get("/equipment/mount/sync", ra=p.get("ra"), dec=p.get("dec")))
+            return _ok(await self._get("/equipment/mount/sync", ra=_f(p.get("ra")) * 15.0, dec=p.get("dec")))   # RA 小时→度
         return {"ok": False, "error": f"live 未映射赤道仪动作 {action}"}
 
     # -- 调焦 ------------------------------------------------------------- #
@@ -673,7 +673,7 @@ class LiveGateway(NinaGateway):
         if action == "set_coordinates":
             self._framing_target = (p.get("ra"), p.get("dec"))   # 记住构图目标,供 slew_center 护栏核算
             return _ok(await self._get("/framing/set-coordinates",
-                                       ra=p.get("ra"), dec=p.get("dec")))
+                                       RAangle=_f(p.get("ra")) * 15.0, DecAngle=p.get("dec")))   # 参数名 RAangle/DecAngle;RA 度
         if action == "slew_center":
             # 构图页"转向并居中"会移动赤道仪 → 必须经 _slew_safety(防绕过护栏打腿)
             tgt = getattr(self, "_framing_target", None)
