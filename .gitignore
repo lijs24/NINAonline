@@ -53,3 +53,9 @@ state/*.db
 state/*.sqlite
 state/*.sqlite3
 !state/.gitkeep
+
+# 工作线框架（agent 层，不上 GitHub）
+worklines/
+.claude/
+CLAUDE.md
+FRAMEWORK.md

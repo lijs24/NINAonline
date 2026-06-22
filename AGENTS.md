@@ -30,3 +30,11 @@
 
 ## 当前进度
 序列设计器(`/designer`)**MVP-0~4 + 增强-5 NINA JSON 编译器**(`backend/gateway/nina_seq.py`,Codex 验证通过)已成。**下一步:增强-6 安全闸门** —— 生成的 .json 拿到 130apo NINA 桌面端手动 Load、肉眼确认无 Unknown 节点(尤其暗/平/偏置场与并行收尾这些真样本里没有、属源码推定的形态),通过后才开 load 下发 → start 监视。详见 `docs/designer-plan.md`。
+
+<!-- WORKLINE-CONTINUITY-START -->
+## 会话连续性协议（Codex 与 Claude 通用，细则见本仓 FRAMEWORK.md）
+本项目「当前工作背景」存在 `worklines/`（独立本地 git，不上 GitHub）。
+- **开工先读**：`worklines/<ACTIVE 内容>/card.md`（需要更深再读 decisions/ledger）。
+- **干活时**：有决策/思路转折 → 追加 `worklines/<id>/decisions.md`（散文记为什么）；进展/结果 → `ledger.md`；机械改动交给 hook。
+- **收尾**：更新 card 为最新现状；在 worklines git 提交，署名你的工具名（codex/claude）。
+<!-- WORKLINE-CONTINUITY-END -->
