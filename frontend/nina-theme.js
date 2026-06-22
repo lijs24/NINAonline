@@ -51,6 +51,7 @@
     ["相机", "/camera", "Imaging"], ["赤道仪", "/mount", "Mount"],
     ["对焦", "/focuser", "Focuser"], ["导星", "/guider", "Guiding"],
     ["滤镜", "/filterwheel", "Filters"], ["序列", "/sequence", "Sequencer"],
+    ["设计器", "/designer", "Designer"],
     ["构图", "/framing", "Framing"], ["辅助", "/aux", "Auxiliary"],
     ["图库", "/library", "Library"],
   ];

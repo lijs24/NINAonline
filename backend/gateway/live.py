@@ -665,6 +665,20 @@ class LiveGateway(NinaGateway):
                 rotation=_f(psr.get("PositionAngle") or 0))
         return m.PlateSolveResult(ok=False, solved=False, error="解算未成功(星点不足/无解)")
 
+    async def get_site(self) -> m.Site:
+        """从 NINA GET /profile/show 读 AstrometrySettings 的台址。
+        读不到时回落配置默认(同 get_mount 缓存的 _site)。"""
+        prof = await self._get("/profile/show")
+        if isinstance(prof, dict) and not prof.get("_error"):
+            astr = prof.get("AstrometrySettings") or {}
+            lat = _f(astr.get("Latitude"), self.s.site_lat)
+            lon = _f(astr.get("Longitude"), self.s.site_lng)
+            elev = _f(astr.get("Elevation"), self.s.site_elev)
+            if lat or lon:
+                self._site = (lat, lon)
+            return m.Site(lat=lat, lon=lon, elev=elev)
+        return m.Site(lat=self.s.site_lat, lon=self.s.site_lng, elev=self.s.site_elev)
+
     async def get_conditions(self) -> dict:
         sun = astro.sun_altitude(self._site[0], self._site[1])
         safety = await self._simple_info("safetymonitor")

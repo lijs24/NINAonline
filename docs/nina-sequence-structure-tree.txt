@@ -1,0 +1,458 @@
+[容器] SequenceRootContainer  «高级序列20260526»
+  [容器] StartAreaContainer  «开始»
+    [指令] WaitForTime  | Hours=21 Minutes=22 Seconds=21
+    [指令] UnparkScope
+  [容器] TargetAreaContainer  «目标»
+    [容器] DeepSkyObjectContainer  «Sh2 284»  | Target='Sh2 284' RA=6 Dec=0
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=6 Dec=0
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=6 Minutes=0 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=6 Dec=0
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=H
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=148
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «Barnard 14»  | Target='Barnard 14' RA=4 Dec=25
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=4 Dec=25
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=6 Minutes=30 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=4 Dec=25
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=90.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=B
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=10
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=G
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=9
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=R
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=143
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=6 Minutes=30 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=4 Dec=25
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=90.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=L
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=34
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «NGC 5364»  | Target='NGC 5364' RA=13 Dec=4
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=13 Dec=4
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=6 Minutes=30 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=13 Dec=4
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=97
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+        [指令] SetTracking
+    [容器] DeepSkyObjectContainer  «T_CrB»  | Target='T_CrB' RA=15 Dec=25
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=15 Dec=25
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=5 Minutes=3 Seconds=9
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=15 Dec=25
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=7.0 Gain=-1 Offset=-1 ExposureCount=2
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=7.0 Gain=-1 Offset=-1 ExposureCount=2
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=7.0 Gain=-1 Offset=-1 ExposureCount=2
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] SetTracking
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «M 84 面板 2»  | Target='M 84 面板 2' RA=12 Dec=13
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=12 Dec=13
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=2 Minutes=10 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=12 Dec=13
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=135
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=18
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=17
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=4
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=12
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+        [指令] SetTracking
+    [容器] DeepSkyObjectContainer  «M 84 面板 1»  | Target='M 84 面板 1' RA=12 Dec=13
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=12 Dec=13
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=4 Minutes=53 Seconds=9
+        ⟂条件 AltitudeCondition 
+        ⟂条件 MoonAltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=12 Dec=13
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=83
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=13
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=8
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+        [指令] SetTracking
+    [容器] DeepSkyObjectContainer  «NGC 7497»  | Target='NGC 7497' RA=23 Dec=18
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=23 Dec=18
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=5 Minutes=3 Seconds=9
+        ⟂条件 AltitudeCondition 
+        ⟂条件 MoonAltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=23 Dec=18
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=40
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+        [指令] SetTracking
+    [容器] DeepSkyObjectContainer  «Sh2 86»  | Target='Sh2 86' RA=19 Dec=23
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=19 Dec=23
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=5 Minutes=8 Seconds=9
+        ⟂条件 AltitudeCondition 
+        ⟂条件 MoonAltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=19 Dec=23
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=82
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=5 Minutes=8 Seconds=9
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=19 Dec=23
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=S
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=0
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+        [指令] SetTracking
+    [容器] DeepSkyObjectContainer  «Sh2 284»  | Target='Sh2 284' RA=6 Dec=0
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=6 Dec=0
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 TimeCondition Hours=6 Minutes=0 Seconds=0
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=6 Dec=0
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter  | Filter=O
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=14
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «Sh2 241»  | Target='Sh2 241' RA=6 Dec=29
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=6 Dec=29
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=6 Dec=29
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        ⚡触发 AutofocusAfterTemperatureChangeTrigger Amount=5.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=171
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «Sh2 290»  | Target='Sh2 290' RA=8 Dec=8
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=8 Dec=8
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=8 Dec=8
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=900.0 Gain=-1 Offset=-1 ExposureCount=157
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «NGC 2903»  | Target='NGC 2903' RA=9 Dec=21
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=9 Dec=21
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=9 Dec=21
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=18
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=16
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «M 3»  | Target='M 3' RA=13 Dec=28
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=13 Dec=28
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=13 Dec=28
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=300.0 Gain=-1 Offset=-1 ExposureCount=18
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=300.0 Gain=-1 Offset=-1 ExposureCount=18
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=300.0 Gain=-1 Offset=-1 ExposureCount=16
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «M27»  | Target='M27' RA=19 Dec=22
+      [容器] SequentialContainer  «Starting»
+        [指令] CoolCamera  | Temperature=-10.0
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=19 Dec=22
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 SunAltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=19 Dec=22
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=6
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=6
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=4
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+    [容器] DeepSkyObjectContainer  «NGC 4449»  | Target='NGC 4449' RA=12 Dec=44
+      [容器] SequentialContainer  «Starting»
+        [指令] WaitForAltitude
+        [指令] UnparkScope
+        [指令] WaitForTimeSpan
+        [指令] Center  | RA=12 Dec=44
+        [指令] RunAutofocus
+        [指令] StartGuiding
+      [容器] SequentialContainer  «Exposure»
+        ⟂条件 AltitudeCondition 
+        ⚡触发 MeridianFlipTrigger 
+        ⚡触发 CenterAfterDriftTrigger RA=12 Dec=44
+        ⚡触发 RestoreGuiding 
+        ⚡触发 AutofocusAfterTimeTrigger Amount=60.0
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=6
+        [指令] SmartExposure  «智能曝光»
+          ⟂条件 LoopCondition Iterations=2
+          ⚡触发 DitherAfterExposures 
+          [指令] SwitchFilter
+          [指令] TakeExposure  | ExposureTime=600.0 Gain=-1 Offset=-1 ExposureCount=6
+      [容器] SequentialContainer  «Endding»
+        [指令] StopGuiding
+        [指令] FindHome
+  [容器] EndAreaContainer  «结束»
+    [容器] ParallelContainer  «并行指令集»
+      [指令] ParkScope
+      [指令] WarmCamera

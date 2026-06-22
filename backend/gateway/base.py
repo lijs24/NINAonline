@@ -119,6 +119,30 @@ class NinaGateway(abc.ABC):
         """天文台综合条件:日高度、是否安全等。"""
         return {"ok": True, "sun_altitude": None, "is_safe": True}
 
+    # -- 序列设计器(provider 无关纯计算;仅 get_site 各 provider 自实现) -- #
+    async def get_site(self) -> m.Site:
+        """观测站点坐标。sim 返回配置默认;live 读 NINA /profile/show。"""
+        return m.Site()
+
+    async def estimate(self, project: m.Project, card: m.Card | None,
+                       clip: m.Clip | None) -> m.EstimateResult:
+        """估时:provider 无关,直接委托 designer。clip 优先(取其卡片+覆盖),
+        否则用裸 card + project.overhead。"""
+        from gateway import designer
+        if clip is not None:
+            return designer.estimate_clip(project, clip)
+        if card is not None:
+            return designer.estimate_duration(card, project.overhead)
+        return m.EstimateResult()
+
+    async def compile_project(self, project: m.Project) -> m.CompiledSequence:
+        from gateway import designer
+        return designer.compile_project(project)
+
+    async def twilight(self, date: str, lat: float, lon: float) -> m.TwilightResult:
+        from gateway import designer
+        return designer.twilight(date, lat, lon)
+
     # -- 构图检索 / 图像库(默认空实现, Sim 覆盖) ------------------------- #
     async def framing_search(self, q: str) -> list[m.FramingTarget]:
         return []

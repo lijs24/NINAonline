@@ -32,6 +32,7 @@ PAGES: dict[str, str] = {
     "/guider": "nina-guider.html",
     "/filterwheel": "nina-filterwheel.html",
     "/sequence": "nina-sequence.html",
+    "/designer": "nina-designer.html",
     "/framing": "nina-framing.html",
     "/aux": "nina-aux.html",
     "/library": "nina-library.html",

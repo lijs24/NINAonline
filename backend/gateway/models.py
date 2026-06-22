@@ -394,6 +394,184 @@ class FramingState(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# 序列设计器(卡片 → 多轨时间轴 → 压缩单轨)
+#
+# 编辑期契约,与上面的 SequencePlan/SequenceTarget/SequenceExposure 并存:
+# 设计器模型描述「做什么 + 拍多少」(卡片库)与「何时」(时间轴 clip),
+# 压缩产物 CompiledSequence 是单轨有序的中间表示(IR)。全部新字段,
+# 旧端点不受影响。MVP 阶段只读/纯计算,不下发设备。
+# --------------------------------------------------------------------------- #
+class CardTarget(BaseModel):
+    """拍摄卡的目标(仅 image_type=LIGHT 用)。十进制小时/度,编译期再拆六十进制。"""
+    name: str = ""
+    ra_hours: float = 0.0
+    dec_degrees: float = 0.0                # 可负
+    rotation: float = 0.0                   # PositionAngle
+
+
+class CardExposure(BaseModel):
+    """拍摄卡的一行曝光(多滤镜=多行,每行 → 一个 SmartExposure)。"""
+    filter: str = "L"
+    exposure_s: float = 60.0
+    gain: int = -1                          # -1 = 跟随相机/Profile 默认(哨兵)
+    offset: int = -1
+    bin: int = 1
+    count: int = 10
+
+
+class Card(BaseModel):
+    """卡片库的可复用单元 —— 只描述意图,不含时间。判别字段 kind。
+
+    四类共享 id/kind/label/color/notes;其余字段按 kind 取用(非本类字段留默认)。
+    用单一宽模型而非 Pydantic 判别联合,沿用本仓 BaseModel 平铺风格,
+    前端按 kind 读写,后端估时/编译按 kind 分派。"""
+    id: str = ""
+    kind: str = "capture"                   # capture | startup | teardown | op
+    label: str = ""
+    color: Optional[str] = None             # 时间轴配色,空走默认
+    notes: str = ""
+
+    # -- kind=capture 拍摄卡 --------------------------------------------- #
+    image_type: str = "LIGHT"               # LIGHT | DARK | FLAT | BIAS
+    target: Optional[CardTarget] = None     # 仅 LIGHT 必填;校准帧为 null
+    exposures: list[CardExposure] = Field(default_factory=list)
+    dither_every: int = 0                   # 每 N 张抖动;0=关
+    af_interval_min: float = 0.0            # 时间触发自动对焦(分钟);0=关
+    af_on_temp_delta: float = 0.0           # 温变触发对焦(°C);0=关
+    meridian_flip: bool = False
+
+    # -- kind=startup / teardown 勾选项 ---------------------------------- #
+    parallel: bool = True                   # teardown:并行收尾
+    checks: dict[str, Any] = Field(default_factory=dict)   # 勾选表(见设计 2.1)
+
+    # -- kind=op 操作卡 -------------------------------------------------- #
+    op: str = ""                            # autofocus|switch_filter|recalibrate_guiding|
+                                            # center|unpark|park|cool|warm|wait|find_home|set_tracking
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class Clip(BaseModel):
+    """时间轴上的卡片实例。引用卡片库,带起止时刻 + 实例级覆盖。"""
+    id: str = ""
+    card_id: str = ""                       # 引用 Card.id
+    track_id: str = ""
+    start_s: float = 0.0                    # 相对 timeline_origin 的秒
+    duration_s: float = 0.0                # 派生:估时算出(后端权威重算)
+    overrides: dict[str, Any] = Field(default_factory=dict)   # 实例覆盖(深合并,不改原卡)
+    anchor: str = "snap"                    # snap | gap | clock | dusk | dawn
+    anchor_clock: Optional[dict[str, int]] = None            # anchor=clock 时 {"h":21,"m":30}
+    anchor_offset_min: float = 0.0          # anchor=dusk/dawn 时相对天象偏移(分钟)
+
+
+class Track(BaseModel):
+    id: str = ""
+    name: str = ""
+    muted: bool = False
+    order: int = 0
+    clips: list[Clip] = Field(default_factory=list)
+
+
+class Site(BaseModel):
+    lat: float = 0.0
+    lon: float = 0.0
+    elev: float = 0.0
+
+
+class Overhead(BaseModel):
+    """估时开销表 —— 全部可调默认。前端必须一字不差镜像这套键名+默认值。"""
+    readout_download_s: float = 5.0         # 每帧读出+下载
+    dither_s: float = 12.0                  # 一次抖动 settle
+    filter_switch_s: float = 3.0            # 每个 SmartExposure 切一次滤镜
+    autofocus_s: float = 90.0               # 一次自动对焦
+    startup_overhead_s: float = 180.0       # DSO 开拍前 Center+AF+Guiding
+    meridian_flip_s: float = 120.0          # 一次中天翻转
+    park_s: float = 45.0
+    unpark_s: float = 20.0
+
+
+class Project(BaseModel):
+    """整份编排工程(设计器文档)。"""
+    id: str = ""
+    name: str = ""
+    date: str = ""                          # YYYY-MM-DD,决定暮光/日出日落
+    site: Site = Field(default_factory=Site)
+    timeline_origin_iso: str = ""           # 横轴零点(通常≈日落,带时区)
+    timeline_end_iso: str = ""              # 横轴末(≈日出)
+    cards: list[Card] = Field(default_factory=list)
+    tracks: list[Track] = Field(default_factory=list)
+    overhead: Overhead = Field(default_factory=Overhead)
+
+
+class EstimateBreakdown(BaseModel):
+    """估时分解(各项秒数,便于前端镜像核对)。按 kind 取用相关字段。"""
+    startup_s: float = 0.0                  # DSO 开拍前置(Center+AF+Guiding)
+    exposure_s: float = 0.0                # 纯曝光累计
+    readout_s: float = 0.0                 # 读出+下载累计
+    dither_s: float = 0.0                  # 抖动累计
+    filter_switch_s: float = 0.0           # 滤镜切换累计
+    autofocus_s: float = 0.0               # 时间触发对焦累计
+    meridian_flip_s: float = 0.0           # 翻转(0/1 次)
+    overhead_s: float = 0.0                # 初始/终止/操作卡的设备开销
+    wait_s: float = 0.0                    # 纯等待(op=wait;不算机时但占位)
+    frames: int = 0                        # 总帧数
+
+
+class EstimateResult(BaseModel):
+    duration_s: float = 0.0
+    breakdown: EstimateBreakdown = Field(default_factory=EstimateBreakdown)
+
+
+class CompiledItem(BaseModel):
+    """压缩后单轨中的一项(按 start_s 升序、互不重叠)。"""
+    clip_id: str = ""                       # _wait 项用合成 id(如 "wait_after_clip_001")
+    card_id: str = ""                       # 来源卡片;_wait 项为空
+    card_kind: str = ""                     # startup | capture | op | teardown | _wait
+    label: str = ""
+    start_s: float = 0.0                    # 相对 timeline_origin
+    duration_s: float = 0.0
+    section: str = "capture"                # startup | capture | op | teardown(归类骨架)
+    anchor: str = "snap"
+    anchor_offset_min: float = 0.0
+    wait_kind: str = ""                     # _wait 项:timespan | clock | dusk | dawn
+    wait_s: float = 0.0                    # _wait 项:等待秒数
+    resolved: dict[str, Any] = Field(default_factory=dict)   # 卡片解析后的内容(供预览/编译)
+
+
+class CompiledOverlap(BaseModel):
+    """压缩失败时的一处冲突(相邻两 clip 在单轨上重叠)。"""
+    clip_a: str = ""                        # 前一条 clip_id
+    clip_b: str = ""                        # 后一条 clip_id
+    at_s: float = 0.0                       # 冲突发生的绝对秒(后条 start_s)
+    overlap_s: float = 0.0                 # 重叠时长
+
+
+class CompiledTotals(BaseModel):
+    frames: int = 0                         # 总帧数(LIGHT+校准)
+    light_s: float = 0.0                   # 纯曝光累计(所有曝光,含校准)
+    wall_clock_s: float = 0.0             # 墙钟总时长(末项 end - 首项 start)
+    starts_at_iso: str = ""
+    ends_at_iso: str = ""
+    fits_in_night: bool = True             # ends_at <= 日出(无 timeline_end 则恒 True)
+
+
+class CompiledSequence(BaseModel):
+    """③压缩产物 = 单轨有序 IR。"""
+    ok: bool = True                         # overlaps 非空 → False
+    project_id: str = ""
+    overlaps: list[CompiledOverlap] = Field(default_factory=list)
+    items: list[CompiledItem] = Field(default_factory=list)
+    totals: CompiledTotals = Field(default_factory=CompiledTotals)
+
+
+class TwilightResult(BaseModel):
+    date: str = ""
+    sunset: Optional[str] = None            # ISO 带时区;None=当晚无此事件(极昼/极夜)
+    dusk: Optional[str] = None              # 天文昏影(太阳 -18°)
+    dawn: Optional[str] = None              # 天文晨光(太阳 -18°)
+    sunrise: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
 # 事件
 # --------------------------------------------------------------------------- #
 class Event(BaseModel):

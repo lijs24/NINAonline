@@ -284,6 +284,84 @@ async def sequence_action(request: Request, body: dict = Body(default={})):
 
 
 # --------------------------------------------------------------------------- #
+# 序列设计器(卡片 → 多轨时间轴 → 压缩单轨)—— 全部只读/纯计算,无锁、不触设备
+# --------------------------------------------------------------------------- #
+from gateway import models as _dm   # noqa: E402  (设计器请求体解析)
+from gateway import nina_seq as _ns  # noqa: E402  (IR→NINA 高级序列 JSON 编译)
+
+
+@router.get("/designer/site")
+async def designer_site(request: Request):
+    """观测站点坐标:sim→配置默认;live→NINA /profile/show 的 AstrometrySettings。"""
+    gw = _gw(request)
+    site = await gw.get_site()
+    return {"lat": site.lat, "lon": site.lon, "elev": site.elev, "source": gw.mode}
+
+
+@router.get("/designer/twilight")
+async def designer_twilight(request: Request, date: str,
+                            lat: Optional[float] = None, lon: Optional[float] = None):
+    """逐分钟扫太阳高度求 日落/天文昏影/晨光/日出(ISO 带时区)。
+    不传 lat/lon 时用站点坐标。"""
+    gw = _gw(request)
+    if lat is None or lon is None:
+        site = await gw.get_site()
+        lat = site.lat if lat is None else lat
+        lon = site.lon if lon is None else lon
+    tw = await gw.twilight(date, lat, lon)
+    return tw.model_dump()
+
+
+@router.post("/designer/estimate")
+async def designer_estimate(request: Request, body: dict = Body(default={})):
+    """估时长 + breakdown。body 含 card 或 clip(clip 优先),及可选 overhead。
+    若给 clip 必须随附其卡片库(放 project.cards)或裸 card 二选一。"""
+    gw = _gw(request)
+    overhead = _dm.Overhead.model_validate(body.get("overhead") or {})
+    if body.get("clip") is not None:
+        # clip 模式:需要 project(至少 cards + overhead)来解析引用与覆盖
+        proj_body = body.get("project") or {"cards": body.get("cards", []),
+                                            "overhead": body.get("overhead") or {}}
+        project = _dm.Project.model_validate(proj_body)
+        clip = _dm.Clip.model_validate(body["clip"])
+        res = await gw.estimate(project, None, clip)
+    else:
+        card = _dm.Card.model_validate(body.get("card") or {})
+        project = _dm.Project(overhead=overhead)
+        res = await gw.estimate(project, card, None)
+    return res.model_dump()
+
+
+@router.post("/designer/compile")
+async def designer_compile(request: Request, body: dict = Body(default={})):
+    """压缩多轨 → 单轨 IR + 重叠检测 + totals。body 为 Project。"""
+    gw = _gw(request)
+    project = _dm.Project.model_validate(body or {})
+    compiled = await gw.compile_project(project)
+    return compiled.model_dump()
+
+
+@router.post("/designer/preview-nina")
+async def designer_preview_nina(request: Request, body: dict = Body(default={})):
+    """把工程编译成 NINA 高级序列 JSON + 静态自检。【只读:仅生成+自检,不下发不启动】。
+    body 为 Project。若存在重叠则不出 JSON,返回 overlaps 让用户回时间轴消除。"""
+    gw = _gw(request)
+    project = _dm.Project.model_validate(body or {})
+    compiled = await gw.compile_project(project)
+    if not compiled.ok:
+        return {"ok": False,
+                "overlaps": [o.model_dump() for o in compiled.overlaps],
+                "validation": {"ok": False,
+                               "errors": ["序列存在重叠,请先在时间轴消除重叠再生成"]}}
+    site = await gw.get_site()
+    root, validation = _ns.build_and_validate(
+        compiled, site={"lat": site.lat, "lon": site.lon},
+        name=project.name or "星枢序列")
+    return {"ok": True, "overlaps": [], "json": root, "validation": validation,
+            "filename": f"{project.name or 'sequence'}.json"}
+
+
+# --------------------------------------------------------------------------- #
 # 构图检索 / 图像库
 # --------------------------------------------------------------------------- #
 @router.get("/framing/search")

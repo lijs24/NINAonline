@@ -524,6 +524,10 @@ class SimGateway(NinaGateway):
     async def get_framing(self) -> m.FramingState:
         return self.framing
 
+    # 序列设计器:站点取配置默认(estimate/compile/twilight 走 base 默认 → designer)
+    async def get_site(self) -> m.Site:
+        return m.Site(lat=self.s.site_lat, lon=self.s.site_lng, elev=self.s.site_elev)
+
     # ====================================================================== #
     # 相机动作
     # ====================================================================== #

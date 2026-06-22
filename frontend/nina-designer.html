@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{background:#0a0e1a;color:#e9e2d0;margin:0;font-family:"Noto Serif SC","Source Han Serif SC","Songti SC",serif}</style>
+<link rel="stylesheet" href="/nina-theme.css">
+<title>星枢 · 设计器</title>
+<style>
+  /* ── 定高一屏:左卡片库(窄) + 中时间轴(主) + 右编辑栏 ── */
+  .dz-fit{max-width:none;margin:0;padding:12px 18px;
+    height:calc(100vh - 52px - 34px);
+    display:grid;grid-template-columns:232px minmax(0,1fr) 300px;gap:18px;overflow:hidden;}
+  @media(max-width:1100px){
+    .dz-fit{height:auto;overflow:visible;grid-template-columns:1fr;}
+  }
+  .dz-col{display:flex;flex-direction:column;min-height:0;min-width:0;}
+  .dz-mid{min-width:0;}
+  .dz-rail{border-left:1px solid var(--gold);padding-left:18px;overflow:auto;}
+  .dz-lib{overflow:auto;padding-right:6px;}
+
+  .dz-head{display:flex;align-items:baseline;gap:10px;flex:0 0 auto;
+    border-bottom:1px solid var(--hair);padding-bottom:7px;margin-bottom:10px;}
+  .dz-head .rn{color:var(--gold);font-size:14px;letter-spacing:1px;}
+  .dz-head h2{font-size:16px;margin:0;font-weight:400;}
+  .dz-head .en{font-style:italic;color:var(--ink-dim);font-size:11px;}
+  .dz-head .tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+
+  /* 卡片库:每张卡=发丝线块(hairline),非液态玻璃 */
+  .libcard{border:1px solid var(--hair);padding:8px 10px;margin-bottom:9px;cursor:grab;
+    transition:border-color .2s;position:relative;touch-action:none;}
+  .libcard:hover{border-color:var(--gold);}
+  .libcard.sel{border-color:var(--gold);}
+  .libcard.drag{opacity:.4;}
+  .libcard .lc-kind{font-style:italic;font-size:10.5px;color:var(--ink-dim);letter-spacing:.5px;}
+  .libcard .lc-label{font-size:14px;color:var(--ink);margin:1px 0 3px;word-break:break-word;}
+  .libcard .lc-meta{font-size:11.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums;}
+  .libcard .lc-acts{position:absolute;top:5px;right:6px;display:flex;gap:4px;opacity:0;transition:opacity .2s;}
+  .libcard:hover .lc-acts{opacity:1;}
+  .libcard .lc-x{cursor:pointer;color:var(--ink-dim);border:none;background:none;font-family:var(--serif);
+    font-size:14px;line-height:1;padding:0 3px;}
+  .libcard .lc-x:hover{color:var(--gold);}
+  .libcard .lc-x.del:hover{color:var(--err);}
+  /* 卡片左侧 kind 色条(金=拍摄,其余暗金/蓝) */
+  .libcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--hair);}
+  .libcard.k-capture::before{background:var(--gold);}
+  .libcard.k-startup::before{background:var(--celestial);}
+  .libcard.k-teardown::before{background:var(--gold-soft);}
+  .libcard.k-op::before{background:var(--ink-dim);}
+
+  .addrow{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;}
+  .addrow .cap{padding:4px 9px;font-size:12px;}
+
+  /* ── 时间轴 ── */
+  .tl-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12.5px;}
+  .tl-tools input.fld{padding:4px 10px;font-size:12.5px;}
+  .tl-wrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;
+    border:1px solid var(--hair);background:rgba(12,18,32,.4);}
+  #tl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+  .tl-tracks{position:absolute;inset:0;overflow:hidden;}
+  .tl-track{position:absolute;left:0;right:0;border-bottom:1px solid var(--hair-soft);}
+  .tl-track .trk-lab{position:absolute;left:6px;top:3px;font-size:10.5px;color:var(--ink-dim);
+    font-style:italic;z-index:2;pointer-events:none;}
+  .tl-track.muted{opacity:.4;}
+  /* clip 块:发丝线块,金色描边 */
+  .clip{position:absolute;border:1px solid var(--gold);background:rgba(201,162,39,.10);
+    box-sizing:border-box;cursor:grab;overflow:hidden;touch-action:none;
+    display:flex;flex-direction:column;justify-content:center;padding:2px 6px;}
+  .clip:hover{background:rgba(201,162,39,.18);}
+  .clip.sel{box-shadow:inset 0 0 0 1px var(--gold);background:rgba(201,162,39,.22);}
+  .clip.conflict{border-color:var(--err);background:rgba(181,103,91,.18);}
+  .clip.k-startup{border-color:var(--celestial);background:rgba(157,180,208,.10);}
+  .clip.k-startup:hover{background:rgba(157,180,208,.18);}
+  .clip.k-teardown{border-color:var(--gold-soft);}
+  .clip.k-op{border-color:var(--ink-dim);background:rgba(139,145,165,.10);}
+  .clip .c-label{font-size:11.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;}
+  .clip .c-dur{font-size:10px;color:var(--ink-dim);font-variant-numeric:tabular-nums;line-height:1.2;}
+  .clip .c-flip{position:absolute;right:2px;top:1px;font-size:9px;color:var(--gold);}
+  /* 拖动吸附参考线(金) */
+  .snapline{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--gold);z-index:9;display:none;pointer-events:none;}
+  .dragghost{position:fixed;z-index:99;border:1px solid var(--gold);background:rgba(201,162,39,.16);
+    padding:3px 8px;font-size:11.5px;color:var(--ink);pointer-events:none;display:none;
+    white-space:nowrap;}
+
+  /* 右栏编辑 */
+  .opt{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--hair-soft);flex-wrap:wrap;}
+  .opt label{color:var(--ink-dim);font-size:13px;min-width:84px;}
+  .opt input.fld,.opt select.fld{padding:4px 11px;font-size:13px;}
+  .opt input.fld[type=number]{width:80px;text-align:right;}
+  .seg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;overflow:hidden;}
+  .seg button{background:transparent;color:var(--ink-dim);border:none;font-family:var(--serif);
+    font-size:12.5px;padding:4px 12px;cursor:pointer;}
+  .seg button.on{background:rgba(201,162,39,.16);color:var(--gold);}
+  .toggle{cursor:pointer;}
+  .toggle.on{border-color:var(--gold);color:var(--gold);}
+  table.exp{width:100%;border-collapse:collapse;margin:5px 0;}
+  table.exp th{color:var(--ink-dim);font-weight:400;font-size:10.5px;font-style:italic;
+    text-align:right;padding:3px 5px;border-bottom:1px solid var(--hair);white-space:nowrap;}
+  table.exp th:first-child{text-align:left;}
+  table.exp td{padding:3px 5px;border-bottom:1px solid var(--hair-soft);text-align:right;
+    font-variant-numeric:tabular-nums;}
+  table.exp td:first-child{text-align:left;}
+  table.exp input.fld,table.exp select.fld{width:100%;text-align:right;padding:3px 7px;font-size:12px;}
+  table.exp select.fld{text-align:left;}
+  table.exp .x{cursor:pointer;color:var(--ink-dim);border:none;background:none;font-family:var(--serif);
+    font-size:14px;line-height:1;padding:0 2px;}
+  table.exp .x:hover{color:var(--err);}
+  .chk{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--hair-soft);font-size:13px;}
+  .chk .cap{padding:3px 11px;font-size:12px;}
+  .chk label{flex:1;color:var(--ink);}
+  .chk input.fld{width:72px;text-align:right;padding:3px 9px;font-size:12px;}
+  .hint{color:var(--ink-dim);font-size:11.5px;font-style:italic;}
+  .row-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .cap.mini{padding:4px 11px;font-size:12.5px;}
+
+  /* 压缩预览(右栏内或铺满) */
+  #results{margin-top:6px;}
+  .res{padding:5px 0;border-bottom:1px solid var(--hair-soft);display:flex;justify-content:space-between;
+    gap:10px;cursor:pointer;font-size:12.5px;}
+  .res:hover{color:var(--gold);}
+  .outline{font-size:12.5px;line-height:1.5;}
+  .outline .o-row{padding:2px 0;border-bottom:1px solid var(--hair-soft);display:flex;gap:8px;}
+  .outline .o-row .o-t{margin-left:auto;color:var(--ink-dim);font-variant-numeric:tabular-nums;}
+  .outline .lvl1{padding-left:0;color:var(--gold);}
+  .outline .lvl2{padding-left:16px;}
+  .outline .lvl3{padding-left:32px;color:var(--ink-dim);}
+  .totline{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--hair-soft);font-size:13px;}
+  .totline .k{color:var(--ink-dim);} .totline .v{font-variant-numeric:tabular-nums;}
+  .preview-bar{height:14px;background:rgba(201,162,39,.10);border:1px solid var(--gold);position:relative;margin:8px 0;}
+  .preview-bar>div{position:absolute;top:0;bottom:0;border-left:1px solid var(--hair);}
+</style>
+</head>
+<body>
+<header id="app-topbar"></header>
+
+<main class="wrap dz-fit view-pending">
+
+  <!-- ───────── 左:卡片库 ───────── -->
+  <section class="dz-col">
+    <div class="dz-head"><span class="rn">Ⅰ</span><h2>卡片库</h2><span class="en">Cards</span></div>
+    <div class="addrow">
+      <button class="cap" data-new="capture">＋拍摄</button>
+      <button class="cap" data-new="startup">＋初始</button>
+      <button class="cap" data-new="op">＋操作</button>
+      <button class="cap" data-new="teardown">＋终止</button>
+    </div>
+    <div class="dz-lib" id="lib"></div>
+    <div class="hint" style="margin-top:8px">拖卡片到中间时间轴 · 点卡片在右栏编辑</div>
+  </section>
+
+  <!-- ───────── 中:多轨时间轴 ───────── -->
+  <section class="dz-col dz-mid">
+    <div class="dz-head"><span class="rn">Ⅱ</span><h2>时间轴</h2><span class="en">Timeline</span>
+      <span class="tools">
+        <input class="fld" id="proj-date" type="date" title="夜晚日期(决定暮光)">
+        <button class="cap mini" id="btn-addtrack">＋轨</button>
+        <button class="cap mini solid" id="btn-compile">压缩单轨</button>
+      </span>
+    </div>
+    <div class="tl-tools">
+      <span class="hint" id="tl-range">—</span>
+      <span style="margin-left:auto" class="hint" id="site-info">站点 —</span>
+    </div>
+    <div class="tl-wrap" id="tl-wrap">
+      <canvas id="tl-canvas"></canvas>
+      <div class="tl-tracks" id="tl-tracks"></div>
+      <div class="snapline" id="snapline"></div>
+    </div>
+    <div class="hint" style="margin-top:6px">拖 clip 改时刻 · 双击编辑实例 · 同轨自动顺排(Push) · 异轨可叠</div>
+  </section>
+
+  <!-- ───────── 右:编辑栏 / 预览 ───────── -->
+  <aside class="dz-col dz-rail" id="rail">
+    <div class="dz-head"><span class="rn">Ⅲ</span><h2 id="rail-title">编辑</h2><span class="en" id="rail-en">Inspector</span></div>
+    <div id="rail-body">
+      <div class="hint">选中卡片或时间轴上的 clip 进行编辑;点「压缩单轨」生成最终预览。</div>
+    </div>
+  </aside>
+</main>
+
+<div class="dragghost" id="ghost"></div>
+
+<script src="/nina-theme.js"></script>
+<script>
+/* =========================================================================
+ * 序列设计器 MVP-0~4 —— 纯前端 + sim;只规划不下发。
+ * 单一事实对象 proj(对标 nina-sequence.html 的 plan);render 重建 DOM;
+ * data-* 委托 onclick/onchange;localStorage 持久化。
+ * 估时函数 estimateCard() 一字镜像后端 designer.py 公式。
+ * ========================================================================= */
+const FILTERS = ["L","R","G","B","Ha","OIII","SII"];
+const ITYPES  = ["LIGHT","DARK","FLAT","BIAS"];
+const OPS = [
+  ["autofocus","自动对焦"],["switch_filter","换滤镜"],["recalibrate_guiding","重校导星"],
+  ["center","居中"],["unpark","解锁"],["park","停靠"],["cool","制冷"],["warm","回温"],
+  ["wait","等待"],["find_home","回 Home"],["set_tracking","跟踪开关"],
+];
+const SNAP_PX = 8;                     // 吸附阈值(像素)
+const LS_KEY = "asiair-designer:proj"; // localStorage 键
+
+const esc = (s)=>Ops.esc(s);
+const uid = (p)=> p + Math.random().toString(36).slice(2,8);
+
+/* ── overhead 默认表:一字镜像 backend models.Overhead ── */
+function defaultOverhead(){
+  return { readout_download_s:5, dither_s:12, filter_switch_s:3, autofocus_s:90,
+           startup_overhead_s:180, meridian_flip_s:120, park_s:45, unpark_s:20 };
+}
+
+/* ── 单一事实对象 ── */
+let proj = null;
+let site = { lat:null, lon:null, elev:null, source:"sim" };
+let twilight = null;                   // {sunset,dusk,dawn,sunrise} 解析后的 Date
+let originSec = 0, endSec = 0;          // 横轴零点/末(epoch 秒)
+let sel = null;                         // {type:"card"|"clip", id, trackId?}
+let compiled = null;                    // 最近一次压缩结果
+
+/* ============================ 工厂 ============================ */
+function defaultProject(){
+  const today = "2026-06-18";
+  return {
+    id: "proj_"+today, name: today+" 夜", date: today,
+    site: { lat:0, lon:0, elev:0 },
+    timeline_origin_iso:"", timeline_end_iso:"",
+    cards: [ defaultCard("capture") ],
+    tracks: [ { id:"t0", name:"轨 0", muted:false, order:0, clips:[] } ],
+    overhead: defaultOverhead(),
+  };
+}
+function defaultCard(kind){
+  const base = { id: uid("c_"), kind, label:"", color:null, notes:"" };
+  if(kind==="capture") return Object.assign(base,{
+    label:"拍摄", image_type:"LIGHT",
+    target:{ name:"", ra_hours:0, dec_degrees:0, rotation:0 },
+    exposures:[ { filter:"L", exposure_s:300, gain:-1, offset:-1, bin:1, count:20 } ],
+    dither_every:2, af_interval_min:60, af_on_temp_delta:0, meridian_flip:false,
+  });
+  if(kind==="startup") return Object.assign(base,{
+    label:"开台", checks:{
+      wait_for_dusk:true, dusk_offset_min:-10, wait_for_clock:null,
+      unpark:true, cool_camera:true, cool_to_c:-10, cool_duration_min:2,
+      connect_all:false, initial_autofocus:false, start_guiding:false, force_calibration:false,
+    },
+  });
+  if(kind==="teardown") return Object.assign(base,{
+    label:"收台", parallel:true, checks:{
+      stop_guiding:true, park:true, warm_camera:true, warm_duration_min:10,
+      find_home:false, set_tracking_off:false, disconnect_all:false,
+    },
+  });
+  // op
+  return Object.assign(base,{ label:"操作", op:"autofocus",
+    params:{ filter:"Ha", filter_position:4, force_calibration:true,
+             duration_min:2, wait_min:5, wait_clock:null } });
+}
+function defaultExposure(){ return { filter:"L", exposure_s:300, gain:-1, offset:-1, bin:1, count:10 }; }
+
+/* 深合并 overrides 到卡片副本(不改原卡)—— 镜像后端 effective_card */
+function deepMerge(base, ov){
+  if(ov==null) return base;
+  if(Array.isArray(base)){
+    // exposures 等数组:按下标覆盖填写的字段
+    if(!Array.isArray(ov)) return base;
+    return ov.map((o,i)=> (i<base.length) ? deepMerge(base[i], o) : o );
+  }
+  if(typeof base==="object" && base!==null && typeof ov==="object" && !Array.isArray(ov)){
+    const out = Array.isArray(base)?[]:Object.assign({},base);
+    for(const k in ov){ out[k] = deepMerge(base[k], ov[k]); }
+    return out;
+  }
+  return ov;
+}
+function effectiveCard(clip){
+  const card = proj.cards.find(c=>c.id===clip.card_id);
+  if(!card) return null;
+  return deepMerge(JSON.parse(JSON.stringify(card)), clip.overrides||{});
+}
+
+/* ============================ 估时(镜像后端公式) ============================
+ * duration_s = 所有 breakdown 机时项之和(含 wait_s)。
+ * 返回 {duration_s, breakdown}.
+ */
+function estimateCard(card, oh){
+  oh = oh || proj.overhead || defaultOverhead();
+  const b = { startup_s:0, exposure_s:0, readout_s:0, dither_s:0, filter_switch_s:0,
+              autofocus_s:0, meridian_flip_s:0, overhead_s:0, wait_s:0, frames:0 };
+  if(card.kind==="capture"){
+    const isLight = card.image_type==="LIGHT";
+    if(isLight) b.startup_s = oh.startup_overhead_s;
+    let totalExpMin = 0;
+    (card.exposures||[]).forEach(e=>{
+      const cnt = +e.count||0, es = +e.exposure_s||0;
+      b.frames += cnt;
+      b.exposure_s += cnt*es;
+      b.readout_s += cnt*oh.readout_download_s;
+      b.filter_switch_s += oh.filter_switch_s;           // 每行 1 次(校准帧单行也 1 次)
+      totalExpMin += cnt*es/60;
+      if(isLight && (+card.dither_every)>0)
+        b.dither_s += Math.floor(cnt/(+card.dither_every))*oh.dither_s;
+    });
+    if(isLight && (+card.af_interval_min)>0)
+      b.autofocus_s = Math.ceil(totalExpMin/(+card.af_interval_min))*oh.autofocus_s;
+    if(isLight && card.meridian_flip) b.meridian_flip_s = oh.meridian_flip_s;
+  }
+  else if(card.kind==="startup"){
+    const ck = card.checks||{};
+    if(ck.unpark) b.overhead_s += oh.unpark_s;
+    if(ck.cool_camera) b.overhead_s += (+ck.cool_duration_min||0)*60;
+    if(ck.initial_autofocus) b.overhead_s += oh.autofocus_s;
+    // WaitForTime(到黄昏/钟点)不计机时,只决定起点
+  }
+  else if(card.kind==="teardown"){
+    const ck = card.checks||{};
+    const park = ck.park ? oh.park_s : 0;
+    const warm = ck.warm_camera ? (+ck.warm_duration_min||0)*60 : 0;
+    b.overhead_s += card.parallel ? Math.max(park,warm) : (park+warm);
+  }
+  else if(card.kind==="op"){
+    const p = card.params||{};
+    switch(card.op){
+      case "autofocus": b.overhead_s += oh.autofocus_s; break;
+      case "center": b.overhead_s += oh.park_s; break;       // 同 park 量级 45
+      case "switch_filter": b.overhead_s += oh.filter_switch_s; break;
+      case "recalibrate_guiding": b.overhead_s += 180; break;
+      case "park": case "find_home": b.overhead_s += oh.park_s; break;
+      case "unpark": b.overhead_s += oh.unpark_s; break;
+      case "cool": case "warm": b.overhead_s += (+p.duration_min||0)*60; break;
+      case "wait":
+        if(p.wait_clock) b.wait_s += 0;                      // 绝对钟点:占位 0
+        else b.wait_s += (+p.wait_min||0)*60;
+        break;
+      case "set_tracking": default: break;                   // 0
+    }
+  }
+  const dur = b.startup_s + b.exposure_s + b.readout_s + b.dither_s + b.filter_switch_s
+            + b.autofocus_s + b.meridian_flip_s + b.overhead_s + b.wait_s;
+  return { duration_s: dur, breakdown: b };
+}
+function clipDuration(clip){
+  const ec = effectiveCard(clip);
+  if(!ec) return 0;
+  return estimateCard(ec, proj.overhead).duration_s;
+}
+
+/* ============================ 持久化 ============================ */
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(proj)); }catch(e){} }
+function load(){
+  try{ const s = localStorage.getItem(LS_KEY); if(s) return JSON.parse(s); }catch(e){}
+  return null;
+}
+
+/* ============================ 横轴时间换算 ============================ */
+let pxPerSec = 0;
+function recalcAxis(){
+  const w = wrapW();
+  pxPerSec = (endSec>originSec) ? w/(endSec-originSec) : 0;
+}
+function wrapW(){ const el=document.getElementById("tl-wrap"); return el?el.clientWidth:1000; }
+function wrapH(){ const el=document.getElementById("tl-wrap"); return el?el.clientHeight:400; }
+function secToX(s){ return s*pxPerSec; }                 // s 相对 origin
+function xToSec(x){ return pxPerSec>0 ? x/pxPerSec : 0; }
+const HEAD_H = 0;                                          // canvas 顶部不留头(刻度叠在轨上方)
+
+/* ============================ 卡片库渲染 ============================ */
+function cardMeta(c){
+  if(c.kind==="capture"){
+    const n = (c.exposures||[]).reduce((a,e)=>a+(+e.count||0),0);
+    const fl = (c.exposures||[]).map(e=>e.filter).join("/");
+    return `${c.image_type} · ${n}帧 ${fl?("· "+fl):""}`;
+  }
+  if(c.kind==="startup"){ const ck=c.checks||{}; const on=Object.keys(ck).filter(k=>ck[k]===true).length; return `初始 · ${on} 项`; }
+  if(c.kind==="teardown"){ return c.parallel?"终止 · 并行":"终止 · 串行"; }
+  if(c.kind==="op"){ const lbl=(OPS.find(o=>o[0]===c.op)||[])[1]||c.op; return "操作 · "+lbl; }
+  return "";
+}
+const KIND_ZH = { capture:"拍摄 capture", startup:"初始 startup", teardown:"终止 teardown", op:"操作 op" };
+function renderLib(){
+  const host = document.getElementById("lib");
+  host.innerHTML = proj.cards.map(c=>{
+    const s = (sel && sel.type==="card" && sel.id===c.id) ? " sel":"";
+    const est = (c.kind==="capture"||true) ? fmtDur(estimateCard(c).duration_s) : "";
+    return `<div class="libcard k-${c.kind}${s}" data-card="${c.id}">
+      <div class="lc-acts">
+        <button class="lc-x" data-act="dup" title="复制">⧉</button>
+        <button class="lc-x del" data-act="del" title="删除">×</button>
+      </div>
+      <div class="lc-kind">${KIND_ZH[c.kind]||c.kind}</div>
+      <div class="lc-label">${esc(c.label)||"未命名"}</div>
+      <div class="lc-meta">${esc(cardMeta(c))} · 估 ${est}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ============================ 时间轴渲染 ============================ */
+const TRACK_H = 54;
+function renderTracks(){
+  const host = document.getElementById("tl-tracks");
+  const tracks = proj.tracks;
+  // 轨道纵向均分(留出顶部 18px 给刻度)
+  const top0 = 18, availH = wrapH()-top0;
+  const th = Math.max(40, Math.min(TRACK_H, availH/Math.max(1,tracks.length)));
+  host.innerHTML = tracks.map((t,i)=>{
+    const top = top0 + i*th;
+    const clips = (t.clips||[]).map(cl=>renderClip(cl,t,th)).join("");
+    return `<div class="tl-track${t.muted?" muted":""}" data-track="${t.id}"
+      style="top:${top}px;height:${th}px">
+      <span class="trk-lab">${esc(t.name)}${t.muted?" · 静音":""}</span>${clips}
+    </div>`;
+  }).join("");
+}
+function renderClip(cl,t,th){
+  const card = proj.cards.find(c=>c.id===cl.card_id);
+  const kind = card?card.kind:"capture";
+  const dur = cl.duration_s||0;
+  const x = secToX(cl.start_s), w = Math.max(3, secToX(dur));
+  const isSel = (sel && sel.type==="clip" && sel.id===cl.id) ? " sel":"";
+  const conf = (compiled && !compiled.ok && conflictIds.has(cl.id)) ? " conflict":"";
+  const label = card ? (card.label||KIND_ZH[kind]) : "(卡片已删)";
+  const ec = effectiveCard(cl);
+  const flip = (kind==="capture" && ec && ec.image_type==="LIGHT" && ec.meridian_flip)
+    ? `<span class="c-flip">⥮</span>`:"";
+  return `<div class="clip k-${kind}${isSel}${conf}" data-clip="${cl.id}" data-track="${t.id}"
+    style="left:${x}px;width:${w}px;top:3px;height:${th-7}px">
+    ${flip}
+    <div class="c-label">${esc(label)}</div>
+    <div class="c-dur">${fmtDur(dur)}</div>
+  </div>`;
+}
+let conflictIds = new Set();
+
+/* canvas:整点刻度 + 暮光竖线 + 暗夜淡背景 */
+let rafPending = false;
+function drawAxis(){
+  if(rafPending) return; rafPending = true;
+  requestAnimationFrame(()=>{
+    rafPending = false;
+    const cv = document.getElementById("tl-canvas");
+    if(!cv) return;
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio||1;
+    if(!w||!h) return;
+    if(cv.width!==w*dpr||cv.height!==h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const hair = cssv("--hair"), gold = cssv("--celestial");
+    if(endSec<=originSec) return;
+
+    // 暗夜核心段(dusk..dawn)淡背景
+    if(twilight && twilight.dusk && twilight.dawn){
+      const x1 = secToX((twilight.dusk.getTime()/1000)-originSec);
+      const x2 = secToX((twilight.dawn.getTime()/1000)-originSec);
+      ctx.fillStyle = "rgba(157,180,208,.05)";
+      ctx.fillRect(x1,0,Math.max(0,x2-x1),h);
+    }
+    // 整点刻度
+    ctx.strokeStyle = hair; ctx.lineWidth = 1;
+    ctx.fillStyle = cssv("--ink-dim"); ctx.font = "11px 'Noto Serif SC',serif";
+    const startD = new Date(originSec*1000);
+    let t0 = new Date(startD); t0.setMinutes(0,0,0);
+    if(t0.getTime()/1000 < originSec) t0 = new Date(t0.getTime()+3600000);
+    for(let tt=t0.getTime()/1000; tt<=endSec; tt+=3600){
+      const x = secToX(tt-originSec);
+      ctx.globalAlpha = .5;
+      ctx.beginPath(); ctx.moveTo(x,14); ctx.lineTo(x,h); ctx.stroke();
+      ctx.globalAlpha = 1;
+      const d = new Date(tt*1000);
+      ctx.fillText(String(d.getHours()).padStart(2,"0")+"h", x+3, 11);
+    }
+    // 暮光竖线:实线=日落/日出,虚线=dusk/dawn
+    const vline = (date, dashed, label)=>{
+      if(!date) return;
+      const x = secToX((date.getTime()/1000)-originSec);
+      if(x<0||x>w) return;
+      ctx.strokeStyle = gold; ctx.lineWidth = 1;
+      ctx.setLineDash(dashed?[4,5]:[]);
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = gold; ctx.font = "10px 'Noto Serif SC',serif";
+      ctx.fillText(label, x+2, h-4);
+    };
+    if(twilight){
+      vline(twilight.sunset, false, "日落");
+      vline(twilight.dusk, true, "昏影");
+      vline(twilight.dawn, true, "晨光");
+      vline(twilight.sunrise, false, "日出");
+    }
+  });
+}
+
+function fmtDur(s){
+  s = Math.max(0, Math.round(s||0));
+  const h = Math.floor(s/3600), m = Math.round((s%3600)/60);
+  if(h) return `${h}h${m?String(m).padStart(2,"0")+"m":""}`;
+  if(m) return `${m}m`;
+  return `${s}s`;
+}
+
+/* ============================ 主渲染 ============================ */
+function render(){
+  recalcAxis();
+  renderLib();
+  renderTracks();
+  drawAxis();
+  bindTracks();
+  renderRail();
+  updateRangeText();
+}
+function updateRangeText(){
+  const fmtHM = (d)=> d? String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0") : "—";
+  if(twilight){
+    document.getElementById("tl-range").textContent =
+      `日落 ${fmtHM(twilight.sunset)} → 日出 ${fmtHM(twilight.sunrise)}　昏影 ${fmtHM(twilight.dusk)} / 晨光 ${fmtHM(twilight.dawn)}`;
+  } else {
+    document.getElementById("tl-range").textContent = "暮光数据加载中…";
+  }
+  document.getElementById("site-info").textContent =
+    (site.lat!=null) ? `站点 ${(+site.lat).toFixed(2)}, ${(+site.lon).toFixed(2)} · ${site.source}` : "站点 —";
+}
+
+/* ============================ 右栏:卡片 / clip 编辑 ============================ */
+function renderRail(){
+  const title = document.getElementById("rail-title");
+  const en = document.getElementById("rail-en");
+  const body = document.getElementById("rail-body");
+  if(sel && sel.type==="card"){
+    const c = proj.cards.find(x=>x.id===sel.id);
+    if(!c){ sel=null; return renderRail(); }
+    title.textContent="卡片编辑"; en.textContent="Card";
+    body.innerHTML = cardForm(c, null);
+    bindCardForm(c, null);
+  } else if(sel && sel.type==="clip"){
+    const tr = proj.tracks.find(t=>(t.clips||[]).some(cl=>cl.id===sel.id));
+    const cl = tr ? tr.clips.find(x=>x.id===sel.id) : null;
+    if(!cl){ sel=null; return renderRail(); }
+    const card = proj.cards.find(c=>c.id===cl.card_id);
+    if(!card){ body.innerHTML=`<div class="hint">来源卡片已删除。</div>`; return; }
+    title.textContent="实例编辑"; en.textContent="Clip override";
+    const ec = effectiveCard(cl);
+    body.innerHTML = `<div class="hint">编辑落在时间轴上的这一实例(写入 overrides,不改卡片库原卡)。</div>`
+      + cardForm(ec, cl);
+    bindCardForm(ec, cl);
+  } else if(sel && sel.type==="preview"){
+    renderPreview();
+  } else {
+    title.textContent="编辑"; en.textContent="Inspector";
+    body.innerHTML = `<div class="hint">选中卡片或时间轴上的 clip 进行编辑;点「压缩单轨」生成最终预览。</div>`;
+  }
+}
+
+/* 生成卡片/实例表单。clip 非空 = 实例编辑模式(改动写 clip.overrides)。 */
+function cardForm(c, clip){
+  let h = "";
+  if(!clip){
+    h += `<div class="opt"><label>名称</label>
+      <input class="fld" data-cf="label" value="${esc(c.label)}" style="flex:1;min-width:120px;text-align:left"></div>`;
+  }
+  if(c.kind==="capture") h += captureForm(c);
+  else if(c.kind==="startup") h += startupForm(c);
+  else if(c.kind==="teardown") h += teardownForm(c);
+  else if(c.kind==="op") h += opForm(c);
+  return h;
+}
+
+function captureForm(c){
+  let h = `<div class="opt"><label>类型</label>
+    <span class="seg">${ITYPES.map(it=>`<button data-itype="${it}" class="${c.image_type===it?'on':''}">${it}</button>`).join("")}</span></div>`;
+  if(c.image_type==="LIGHT"){
+    const t = c.target||{name:"",ra_hours:0,dec_degrees:0,rotation:0};
+    h += `<div class="opt"><label>目标名</label>
+      <input class="fld" data-tf="name" value="${esc(t.name)}" style="flex:1;min-width:90px;text-align:left">
+      <button class="cap mini" data-act="search">检索</button></div>
+      <div class="opt"><label>RA(小时)</label><input class="fld" type="number" step="0.0001" data-tf="ra_hours" value="${t.ra_hours}"></div>
+      <div class="opt"><label>Dec(度)</label><input class="fld" type="number" step="0.0001" data-tf="dec_degrees" value="${t.dec_degrees}"></div>
+      <div class="opt"><label>旋转</label><input class="fld" type="number" step="0.1" data-tf="rotation" value="${t.rotation}"></div>
+      <div class="hint">${Ops.fmtRA(+t.ra_hours||0)} ${Ops.fmtDec(+t.dec_degrees||0)}</div>
+      <div id="dz-results"></div>`;
+  }
+  // 曝光行表
+  h += `<table class="exp"><thead><tr>
+    <th>滤镜</th><th>曝光s</th><th>增益</th><th>偏置</th><th>bin</th><th>张数</th><th></th>
+  </tr></thead><tbody>`;
+  (c.exposures||[]).forEach((e,ei)=>{
+    h += `<tr data-ei="${ei}">
+      <td><select class="fld" data-ef="filter">${FILTERS.map(f=>`<option ${f===e.filter?"selected":""}>${f}</option>`).join("")}</select></td>
+      <td><input class="fld" type="number" step="0.5" data-ef="exposure_s" value="${e.exposure_s}"></td>
+      <td><input class="fld" type="number" data-ef="gain" value="${e.gain}"></td>
+      <td><input class="fld" type="number" data-ef="offset" value="${e.offset}"></td>
+      <td><input class="fld" type="number" min="1" max="4" data-ef="bin" value="${e.bin}"></td>
+      <td><input class="fld" type="number" min="1" data-ef="count" value="${e.count}"></td>
+      <td><button class="x" data-act="del-exp" title="删行">×</button></td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+    <div class="row-acts"><button class="cap mini" data-act="add-exp">＋滤镜行</button></div>`;
+  // 触发(仅 LIGHT 生效;校准帧也允许编辑但估时忽略)
+  h += `<div class="opt"><label>每N张抖动</label><input class="fld" type="number" min="0" data-cf="dither_every" value="${c.dither_every}"></div>
+    <div class="opt"><label>对焦间隔(分)</label><input class="fld" type="number" min="0" step="1" data-cf="af_interval_min" value="${c.af_interval_min}"></div>
+    <div class="opt"><label>温变对焦(°C)</label><input class="fld" type="number" min="0" step="0.1" data-cf="af_on_temp_delta" value="${c.af_on_temp_delta}"></div>
+    <div class="opt"><label>子午翻转</label>
+      <button class="cap mini toggle ${c.meridian_flip?'on':''}" data-tg="meridian_flip">${c.meridian_flip?"开":"关"}</button></div>`;
+  h += estLine(c);
+  return h;
+}
+function startupForm(c){
+  const ck = c.checks||{};
+  const tg = (key,label,extra)=>`<div class="chk">
+    <button class="cap mini toggle ${ck[key]?'on':''}" data-ck="${key}">${ck[key]?"开":"关"}</button>
+    <label>${label}</label>${extra||""}</div>`;
+  let h = "";
+  h += tg("wait_for_dusk","到昏影开拍",
+    `偏移<input class="fld" type="number" data-ckv="dusk_offset_min" value="${ck.dusk_offset_min??-10}">分`);
+  h += tg("unpark","解锁赤道仪 Unpark");
+  h += tg("cool_camera","相机制冷",
+    `至<input class="fld" type="number" data-ckv="cool_to_c" value="${ck.cool_to_c??-10}">° ${`<input class="fld" type="number" step="0.5" data-ckv="cool_duration_min" value="${ck.cool_duration_min??2}">分`}`);
+  h += tg("connect_all","连接所有设备");
+  h += tg("initial_autofocus","开台先对焦");
+  h += tg("start_guiding","起手导星");
+  h += tg("force_calibration","强制校准导星");
+  h += estLine(c);
+  return h;
+}
+function teardownForm(c){
+  const ck = c.checks||{};
+  let h = `<div class="opt"><label>并行收尾</label>
+    <button class="cap mini toggle ${c.parallel?'on':''}" data-tg="parallel">${c.parallel?"并行":"串行"}</button>
+    <span class="hint">并行=取 max,串行=求和</span></div>`;
+  const tg = (key,label,extra)=>`<div class="chk">
+    <button class="cap mini toggle ${ck[key]?'on':''}" data-ck="${key}">${ck[key]?"开":"关"}</button>
+    <label>${label}</label>${extra||""}</div>`;
+  h += tg("stop_guiding","停止导星");
+  h += tg("park","停靠 Park");
+  h += tg("warm_camera","相机回温",
+    `<input class="fld" type="number" step="0.5" data-ckv="warm_duration_min" value="${ck.warm_duration_min??10}">分`);
+  h += tg("find_home","回 Home");
+  h += tg("set_tracking_off","关跟踪");
+  h += tg("disconnect_all","断开设备");
+  h += estLine(c);
+  return h;
+}
+function opForm(c){
+  const p = c.params||{};
+  let h = `<div class="opt"><label>动作</label>
+    <select class="fld" data-cf="op" style="flex:1">${OPS.map(o=>`<option value="${o[0]}" ${c.op===o[0]?"selected":""}>${o[1]}</option>`).join("")}</select></div>`;
+  if(c.op==="switch_filter"){
+    h += `<div class="opt"><label>滤镜</label>
+      <select class="fld" data-pf="filter">${FILTERS.map(f=>`<option ${p.filter===f?"selected":""}>${f}</option>`).join("")}</select></div>
+      <div class="opt"><label>槽位</label><input class="fld" type="number" data-pf="filter_position" value="${p.filter_position??0}"></div>`;
+  } else if(c.op==="recalibrate_guiding"){
+    h += `<div class="opt"><label>强制校准</label>
+      <button class="cap mini toggle ${p.force_calibration?'on':''}" data-ptg="force_calibration">${p.force_calibration?"开":"关"}</button></div>`;
+  } else if(c.op==="cool"||c.op==="warm"){
+    h += `<div class="opt"><label>渐变时长(分)</label><input class="fld" type="number" step="0.5" data-pf="duration_min" value="${p.duration_min??2}"></div>`;
+  } else if(c.op==="wait"){
+    h += `<div class="opt"><label>等待(分)</label><input class="fld" type="number" step="0.5" data-pf="wait_min" value="${p.wait_min??5}"></div>
+      <div class="hint">等待计入占位、不算机时</div>`;
+  }
+  h += estLine(c);
+  return h;
+}
+function estLine(c){
+  const r = estimateCard(c);
+  return `<div class="totline" style="margin-top:10px;border-top:1px solid var(--hair)">
+    <span class="k">估计时长</span><span class="v gold">${fmtDur(r.duration_s)}</span></div>`;
+}
+
+/* 表单事件绑定。clip 非空 → 改动写 clip.overrides(深合并),并重算 duration_s。 */
+function bindCardForm(c, clip){
+  const body = document.getElementById("rail-body");
+  // 写回:卡片模式直接改 proj.cards;实例模式改 clip.overrides
+  const commit = (mut)=>{
+    if(clip){ applyOverride(clip, mut); }
+    else { const card = proj.cards.find(x=>x.id===c.id); mut(card); }
+    save();
+    if(clip){ clip.duration_s = clipDuration(clip); }
+    render();
+  };
+  // 顶层字段
+  body.querySelectorAll("[data-cf]").forEach(el=> el.onchange = ()=>{
+    const f = el.dataset.cf;
+    const v = (el.type==="number") ? +el.value : el.value;
+    commit(obj=>{ obj[f]=v; });
+  });
+  // 目标字段
+  body.querySelectorAll("[data-tf]").forEach(el=> el.onchange = ()=>{
+    const f = el.dataset.tf;
+    const v = (el.type==="number") ? +el.value : el.value;
+    commit(obj=>{ if(!obj.target) obj.target={name:"",ra_hours:0,dec_degrees:0,rotation:0}; obj.target[f]=v; });
+  });
+  // 曝光行字段
+  body.querySelectorAll("[data-ef]").forEach(el=> el.onchange = ()=>{
+    const ei = +el.closest("tr").dataset.ei, f = el.dataset.ef;
+    const v = (el.type==="number") ? +el.value : el.value;
+    commit(obj=>{ obj.exposures[ei][f]=v; });
+  });
+  // op params
+  body.querySelectorAll("[data-pf]").forEach(el=> el.onchange = ()=>{
+    const f = el.dataset.pf;
+    const v = (el.type==="number") ? +el.value : el.value;
+    commit(obj=>{ if(!obj.params)obj.params={}; obj.params[f]=v; });
+  });
+  body.querySelectorAll("[data-ptg]").forEach(el=> el.onclick = ()=>{
+    const f = el.dataset.ptg;
+    commit(obj=>{ if(!obj.params)obj.params={}; obj.params[f]=!obj.params[f]; });
+  });
+  // 段控 image_type
+  body.querySelectorAll("[data-itype]").forEach(el=> el.onclick = ()=>{
+    const it = el.dataset.itype;
+    commit(obj=>{ obj.image_type=it; if(it!=="LIGHT") obj.target=null;
+      else if(!obj.target) obj.target={name:"",ra_hours:0,dec_degrees:0,rotation:0}; });
+  });
+  // toggle(meridian_flip / parallel)
+  body.querySelectorAll("[data-tg]").forEach(el=> el.onclick = ()=>{
+    const f = el.dataset.tg;
+    commit(obj=>{ obj[f]=!obj[f]; });
+  });
+  // checks 勾选 + 值
+  body.querySelectorAll("[data-ck]").forEach(el=> el.onclick = ()=>{
+    const k = el.dataset.ck;
+    commit(obj=>{ if(!obj.checks)obj.checks={}; obj.checks[k]=!obj.checks[k]; });
+  });
+  body.querySelectorAll("[data-ckv]").forEach(el=> el.onchange = ()=>{
+    const k = el.dataset.ckv, v = (el.type==="number")?+el.value:el.value;
+    commit(obj=>{ if(!obj.checks)obj.checks={}; obj.checks[k]=v; });
+  });
+  // 动作按钮(增删曝光行 / 检索)
+  body.querySelectorAll("[data-act]").forEach(el=> el.onclick = ()=>{
+    const act = el.dataset.act;
+    if(act==="add-exp"){ commit(obj=>{ obj.exposures.push(defaultExposure()); }); }
+    else if(act==="del-exp"){
+      const ei = +el.closest("tr").dataset.ei;
+      commit(obj=>{ if(obj.exposures.length>1) obj.exposures.splice(ei,1);
+        else Ops.status("warn","至少保留一行曝光"); });
+    }
+    else if(act==="search"){ doSearch(c, clip); }
+  });
+}
+
+/* 把一次 mutation 应用为 clip.overrides 的深差异:对克隆的 effective 改完后,
+ * 与原卡 diff,写回 overrides。简化策略:整段相关字段写入 overrides。 */
+function applyOverride(clip, mut){
+  const ec = effectiveCard(clip);            // 当前有效卡(已含旧 overrides)
+  mut(ec);                                    // 在有效卡上改
+  const base = proj.cards.find(c=>c.id===clip.card_id);
+  clip.overrides = diffObj(base, ec);         // 与原卡求差 → overrides
+}
+/* 求 a→b 的差异对象(只记 b 中与 a 不同的字段;数组整段记录) */
+function diffObj(a, b){
+  if(Array.isArray(b)){
+    // 数组:逐元素 diff,但若长度或任一元素结构变化,直接整段记录(估时只读取,安全)
+    return JSON.parse(JSON.stringify(b));
+  }
+  if(typeof b==="object" && b!==null && typeof a==="object" && a!==null && !Array.isArray(a)){
+    const out = {};
+    for(const k in b){
+      if(k==="id"||k==="kind") continue;
+      const d = diffObj(a?a[k]:undefined, b[k]);
+      const same = JSON.stringify(a?a[k]:undefined)===JSON.stringify(b[k]);
+      if(!same) out[k] = d;
+    }
+    return out;
+  }
+  return b;
+}
+
+/* ============================ 卡片库交互 ============================ */
+function bindLib(){
+  const host = document.getElementById("lib");
+  host.querySelectorAll(".libcard").forEach(el=>{
+    const id = el.dataset.card;
+    // 动作按钮
+    el.querySelectorAll("[data-act]").forEach(b=> b.onclick = (e)=>{
+      e.stopPropagation();
+      const act = b.dataset.act;
+      if(act==="dup"){
+        const c = proj.cards.find(x=>x.id===id);
+        const cp = JSON.parse(JSON.stringify(c)); cp.id=uid("c_"); cp.label=(c.label||"卡片")+" 副本";
+        proj.cards.push(cp); save(); render(); bindLib();
+      } else if(act==="del"){
+        proj.cards = proj.cards.filter(x=>x.id!==id);
+        // 同时清掉引用它的 clip
+        proj.tracks.forEach(t=> t.clips = (t.clips||[]).filter(cl=>cl.card_id!==id));
+        if(sel && sel.id===id) sel=null;
+        save(); render(); bindLib();
+      }
+    });
+    // 选中编辑
+    el.onclick = ()=>{ sel={type:"card", id}; renderLib(); bindLib(); renderRail(); };
+    // 拖拽到时间轴
+    el.addEventListener("pointerdown", (e)=> startLibDrag(e, id, el));
+  });
+}
+
+/* ============================ 时间轴 clip 交互绑定 ============================ */
+function bindTracks(){
+  const tracksEl = document.getElementById("tl-tracks");
+  tracksEl.querySelectorAll(".clip").forEach(el=>{
+    const clipId = el.dataset.clip;
+    el.onclick = (e)=>{ e.stopPropagation(); sel={type:"clip", id:clipId}; render(); };
+    el.ondblclick = (e)=>{ e.stopPropagation(); sel={type:"clip", id:clipId}; renderRail();
+      Ops.status("ok","实例编辑 —— 改字段实时重算时长"); };
+    el.addEventListener("pointerdown", (e)=> startClipDrag(e, clipId, el));
+  });
+}
+
+/* ── 拖卡片库 → 新建 clip ── */
+let dragState = null;
+function startLibDrag(e, cardId, el){
+  e.preventDefault();
+  const ghost = document.getElementById("ghost");
+  const card = proj.cards.find(c=>c.id===cardId);
+  dragState = { mode:"new", cardId, moved:false };
+  ghost.textContent = (card.label||"卡片");
+  ghost.style.display = "block";
+  positionGhost(e);
+  el.setPointerCapture(e.pointerId);
+  el.classList.add("drag");
+  const move = (ev)=>{ dragState.moved=true; positionGhost(ev); highlightTrack(ev); };
+  const up = (ev)=>{
+    el.releasePointerCapture(ev.pointerId);
+    el.classList.remove("drag");
+    ghost.style.display="none";
+    clearTrackHL();
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    if(dragState.moved) dropNewClip(ev, cardId);
+    dragState = null;
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+function positionGhost(e){
+  const g = document.getElementById("ghost");
+  g.style.left = (e.clientX+12)+"px"; g.style.top=(e.clientY-10)+"px";
+}
+function trackAtY(clientY){
+  const wrap = document.getElementById("tl-wrap").getBoundingClientRect();
+  const y = clientY - wrap.top;
+  const tracks = proj.tracks;
+  const top0 = 18, availH = wrapH()-top0;
+  const th = Math.max(40, Math.min(TRACK_H, availH/Math.max(1,tracks.length)));
+  const i = Math.floor((y-top0)/th);
+  if(i<0) return tracks[0];
+  if(i>=tracks.length) return tracks[tracks.length-1];
+  return tracks[i];
+}
+function highlightTrack(e){
+  clearTrackHL();
+  const t = trackAtY(e.clientY);
+  if(!t) return;
+  const el = document.querySelector(`.tl-track[data-track="${t.id}"]`);
+  if(el) el.style.background = "rgba(201,162,39,.06)";
+  // 吸附参考线
+  const wrap = document.getElementById("tl-wrap").getBoundingClientRect();
+  const x = e.clientX - wrap.left;
+  showSnapline(x);
+}
+function clearTrackHL(){
+  document.querySelectorAll(".tl-track").forEach(el=>el.style.background="");
+  hideSnapline();
+}
+function showSnapline(x){
+  const ln = document.getElementById("snapline");
+  ln.style.left = x+"px"; ln.style.display="block";
+}
+function hideSnapline(){ document.getElementById("snapline").style.display="none"; }
+
+function dropNewClip(e, cardId){
+  const t = trackAtY(e.clientY);
+  if(!t) return;
+  const wrap = document.getElementById("tl-wrap").getBoundingClientRect();
+  let startS = Math.max(0, xToSec(e.clientX - wrap.left));
+  const clip = { id: uid("clip_"), card_id:cardId, track_id:t.id,
+    start_s: startS, duration_s:0, overrides:{}, anchor:"snap", anchor_clock:null, anchor_offset_min:0 };
+  clip.duration_s = clipDuration(clip);
+  t.clips = t.clips||[];
+  t.clips.push(clip);
+  placeClip(t, clip, startS);       // 落定(吸附 + Push 防重叠)
+  sel = {type:"clip", id:clip.id};
+  save(); render();
+  Ops.status("ok",`已放置「${(proj.cards.find(c=>c.id===cardId)||{}).label||"卡片"}」`);
+}
+
+/* ── 拖已有 clip ── */
+function startClipDrag(e, clipId, el){
+  e.preventDefault();
+  const tr = proj.tracks.find(t=>(t.clips||[]).some(c=>c.id===clipId));
+  const clip = tr.clips.find(c=>c.id===clipId);
+  const wrap = document.getElementById("tl-wrap").getBoundingClientRect();
+  const grabX = e.clientX;
+  const orig = clip.start_s;
+  dragState = { mode:"move", moved:false };
+  el.setPointerCapture(e.pointerId);
+  const move = (ev)=>{
+    dragState.moved = true;
+    const dx = ev.clientX - grabX;
+    let desired = Math.max(0, orig + xToSec(dx));
+    // 实时:可能换轨
+    const t2 = trackAtY(ev.clientY);
+    if(t2 && t2.id!==clip.track_id){
+      tr.clips = tr.clips.filter(c=>c.id!==clipId);
+      clip.track_id = t2.id; t2.clips = t2.clips||[]; t2.clips.push(clip);
+    }
+    const tcur = proj.tracks.find(t=>t.id===clip.track_id);
+    placeClip(tcur, clip, desired, true);
+    render();
+    showSnapline(secToX(clip.start_s));
+  };
+  const up = (ev)=>{
+    el.releasePointerCapture(ev.pointerId);
+    hideSnapline();
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    if(dragState.moved){ save(); }
+    sel = {type:"clip", id:clipId};
+    render();
+    dragState = null;
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+
+/* ── 落定算法:吸附 + Push(同轨防重叠,改前面一条→后面吸附链整体平移) ──
+ * 已拍板:同轨冲突用 Push。把当前 clip 放到 desired;吸附到最近边界;
+ * 若与某条重叠,推到其后;随后对其后所有 clip 做吸附链平移(整体右移)。
+ */
+function placeClip(track, clip, desired, dragging){
+  const others = (track.clips||[]).filter(c=>c.id!==clip.id).sort((a,b)=>a.start_s-b.start_s);
+  const SNAP_S = pxPerSec>0 ? SNAP_PX/pxPerSec : 0;
+  let start = Math.max(0, desired);
+  // 吸附到最近边界(前条 end / 后条 start)
+  let bestEdge=null, bestD=SNAP_S;
+  others.forEach(o=>{
+    const oend = o.start_s + o.duration_s;
+    [o.start_s, oend].forEach(edge=>{
+      const d = Math.abs(start-edge);
+      if(d<=bestD){ bestD=d; bestEdge=edge; }
+    });
+  });
+  if(bestEdge!=null) start = bestEdge;
+  // 防重叠:若与某条 [s,e] 重叠则推到其 end 之后,迭代
+  let guard=0;
+  let changed=true;
+  while(changed && guard++<200){
+    changed=false;
+    for(const o of others){
+      const oe = o.start_s + o.duration_s;
+      if(start < oe - SNAP_S && (start+clip.duration_s) > o.start_s + SNAP_S){
+        start = oe;            // 推到该条之后
+        changed=true;
+      }
+    }
+  }
+  clip.start_s = Math.max(0, start);
+  // Push 吸附链:把当前 clip 之后、与之重叠或紧贴的后续条整体右移,保持彼此间隔
+  rippleAfter(track, clip);
+}
+/* 从 clip 起,沿同轨后续条做级联:若后一条与前一条重叠,则整体右移补足。 */
+function rippleAfter(track, anchorClip){
+  const sorted = (track.clips||[]).slice().sort((a,b)=>a.start_s-b.start_s);
+  const SNAP_S = pxPerSec>0 ? SNAP_PX/pxPerSec : 0;
+  for(let i=1;i<sorted.length;i++){
+    const prev = sorted[i-1], cur = sorted[i];
+    const prevEnd = prev.start_s + prev.duration_s;
+    if(cur.start_s < prevEnd - SNAP_S){
+      cur.start_s = prevEnd;     // 紧贴前条之后(整体平移由迭代逐条实现)
+    }
+  }
+}
+
+/* ============================ 检索目标(framing) ============================ */
+async function doSearch(c, clip){
+  const t = (clip ? effectiveCard(clip) : c).target;
+  const q = (t&&t.name) ? t.name : "";
+  let d;
+  try { d = await Ops.get(`/api/framing/search?q=${encodeURIComponent(q)}`); }
+  catch(e){ Ops.status("warn","检索失败,可手填 RA/Dec"); return; }
+  const host = document.getElementById("dz-results");
+  if(!host) return;
+  const targets = d.targets||[];
+  host.innerHTML = targets.length ? targets.map(tg=>
+    `<div class="res" data-ra="${tg.ra_hours}" data-dec="${tg.dec_degrees}" data-name="${esc(tg.name)}">
+      <span>${esc(tg.name)} <em class="hint">${esc(tg.type||"")}</em></span>
+      <span class="v cel">${Ops.fmtRA(tg.ra_hours)}</span></div>`).join("")
+    : `<div class="hint">无匹配,可手填 RA(小时)/ Dec(度)</div>`;
+  host.querySelectorAll(".res").forEach(el=> el.onclick = ()=>{
+    const mut = (obj)=>{ if(!obj.target) obj.target={name:"",ra_hours:0,dec_degrees:0,rotation:0};
+      obj.target.name = el.dataset.name;
+      obj.target.ra_hours = +(+el.dataset.ra).toFixed(4);
+      obj.target.dec_degrees = +(+el.dataset.dec).toFixed(4); };
+    if(clip){ applyOverride(clip, mut); clip.duration_s=clipDuration(clip); }
+    else { mut(proj.cards.find(x=>x.id===c.id)); }
+    save(); render();
+    Ops.status("ok",`已填入 ${el.dataset.name}`);
+  });
+}
+
+/* ============================ 压缩单轨(MVP-4) ============================ */
+async function compileProj(){
+  // 写回 timeline_origin/end + site(随 body 上送),duration 已实时维护
+  proj.timeline_origin_iso = originSec ? new Date(originSec*1000).toISOString() : "";
+  proj.timeline_end_iso = endSec ? new Date(endSec*1000).toISOString() : "";
+  let res;
+  try { res = await Ops.post("/api/designer/compile", proj); }
+  catch(e){ Ops.status("err","压缩请求失败"); return; }
+  compiled = res;
+  conflictIds = new Set();
+  if(res && !res.ok && (res.overlaps||[]).length){
+    res.overlaps.forEach(o=>{ conflictIds.add(o.clip_a); conflictIds.add(o.clip_b); });
+    const o = res.overlaps[0];
+    const na = clipLabel(o.clip_a), nb = clipLabel(o.clip_b);
+    const at = absSecToHM(o.at_s);
+    const mins = Math.round(o.overlap_s/60);
+    Ops.status("err",`${na} 与 ${nb} 在 ${at} 重叠 ${mins} min —— 请回时间轴调整`);
+    sel = null;
+    render();
+    // 跳到冲突处:把选中切到后条 clip
+    setTimeout(()=>{ jumpToConflict(o.clip_b); }, 50);
+    return;
+  }
+  Ops.status("ok",`压缩成功 · ${(res.items||[]).length} 项 · ${res.totals.frames} 帧`);
+  sel = {type:"preview"};
+  render();
+}
+function clipLabel(clipId){
+  for(const t of proj.tracks){
+    const cl = (t.clips||[]).find(c=>c.id===clipId);
+    if(cl){ const card = proj.cards.find(c=>c.id===cl.card_id); return card?(card.label||card.kind):clipId; }
+  }
+  return clipId;
+}
+function absSecToHM(relS){
+  const d = new Date((originSec+relS)*1000);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function jumpToConflict(clipId){
+  const el = document.querySelector(`.clip[data-clip="${clipId}"]`);
+  if(el){ el.scrollIntoView({block:"nearest",inline:"center",behavior:"smooth"}); }
+  Ops.status("warn","已定位到冲突处(红描边)");
+}
+
+/* 压缩预览:树形大纲 + totals + 满宽预览条 + 置灰「下发」 */
+function renderPreview(){
+  const title = document.getElementById("rail-title");
+  const en = document.getElementById("rail-en");
+  const body = document.getElementById("rail-body");
+  title.textContent="单轨预览"; en.textContent="Compiled";
+  if(!compiled || !compiled.ok){ body.innerHTML=`<div class="hint">尚无成功的压缩结果。</div>`; return; }
+  const items = compiled.items||[];
+  const tot = compiled.totals||{};
+  // 满宽预览条
+  let bars = "";
+  if(tot.wall_clock_s>0){
+    const t0 = items.length?items[0].start_s:0;
+    items.forEach(it=>{
+      const left = ((it.start_s - t0)/tot.wall_clock_s)*100;
+      bars += `<div style="left:${left}%"></div>`;
+    });
+  }
+  // 树形大纲
+  const SEC_ZH = { startup:"开始", capture:"目标", op:"操作", teardown:"结束", _wait:"等待" };
+  let rows = "";
+  items.forEach(it=>{
+    if(it.card_kind==="_wait"){
+      rows += orow("lvl2", `等待 · ${fmtDur(it.wait_s||it.duration_s)}`, fmtDur(it.duration_s));
+      return;
+    }
+    const kindZh = SEC_ZH[it.card_kind]||it.card_kind;
+    rows += orow("lvl1", `${kindZh} · ${esc(it.label||"")}`, fmtDur(it.duration_s));
+    if(it.card_kind==="capture" && it.resolved){
+      const r = it.resolved;
+      if(r.target) rows += orow("lvl2", `Starting · ${esc(r.target.name||"")} ${Ops.fmtRA(r.target.ra_hours||0)}`, "");
+      (r.exposures||[]).forEach(e=>{
+        rows += orow("lvl3", `Exposure · ${esc(e.filter)} ${e.exposure_s}s ×${e.count}`, "");
+      });
+      rows += orow("lvl3", `Endding · 停止导星`, "");
+    }
+  });
+  function orow(lvl, label, t){
+    return `<div class="o-row ${lvl}"><span>${label}</span><span class="o-t">${t}</span></div>`;
+  }
+  const fitTxt = tot.fits_in_night ? "在日出前结束" : "⚠ 超出日出";
+  const fitCls = tot.fits_in_night ? "gold" : "";
+  const endHM = tot.ends_at_iso ? hmOfIso(tot.ends_at_iso) : "—";
+  body.innerHTML = `
+    <div class="preview-bar">${bars}</div>
+    <div class="totline"><span class="k">总帧数</span><span class="v">${tot.frames||0}</span></div>
+    <div class="totline"><span class="k">纯曝光</span><span class="v">${fmtDur(tot.light_s||0)}</span></div>
+    <div class="totline"><span class="k">墙钟总时长</span><span class="v">${fmtDur(tot.wall_clock_s||0)}</span></div>
+    <div class="totline"><span class="k">收台于</span><span class="v">${endHM}</span></div>
+    <div class="totline"><span class="k">是否日出前</span><span class="v ${fitCls}">${fitTxt}</span></div>
+    <div class="dz-head" style="margin-top:14px"><span class="rn">·</span><h2 style="font-size:14px">大纲</h2><span class="en">Outline</span></div>
+    <div class="outline">${rows||'<div class="hint">空</div>'}</div>
+    <div class="row-acts" style="margin-top:14px">
+      <button class="cap mini solid" id="btn-gen-nina">生成 NINA 序列</button>
+      <button class="cap mini" disabled title="增强-8:通过安全闸门后开放">下发</button>
+    </div>
+    <div id="nina-val" class="hint">「生成」= 编译成 NINA 高级序列 JSON + 自检并下载(只读,不下发不启动)。</div>`;
+  const gb = body.querySelector("#btn-gen-nina");
+  if(gb) gb.onclick = genNina;
+}
+function hmOfIso(iso){
+  try{ const d=new Date(iso); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+  catch(e){ return "—"; }
+}
+
+/* 生成 NINA 高级序列 JSON + 自检 + 下载(只读,不下发不启动)*/
+async function genNina(){
+  let d;
+  try { d = await Ops.post("/api/designer/preview-nina", proj); }
+  catch(e){ Ops.status("err","生成请求失败"); return; }
+  const valEl = document.getElementById("nina-val");
+  if(!d.ok){
+    Ops.status("err","存在重叠,无法生成 —— 请先在时间轴消除重叠");
+    if(valEl) valEl.innerHTML = `<span style="color:var(--err)">序列重叠,先回时间轴调整后再生成。</span>`;
+    return;
+  }
+  const v = d.validation || {ok:false, errors:["无自检结果"]};
+  const st = v.stats || {};
+  if(v.ok){
+    downloadJSON(d.filename || "sequence.json", d.json);
+    Ops.status("ok", `已生成并下载 · ${st.nodes||0} 节点 / ${st.smart_exposures||0} 个智能曝光 · 自检通过`);
+    if(valEl) valEl.innerHTML =
+      `<span class="gold">✓ 自检通过</span> · ${st.nodes||0} 节点 · ${st.ids||0} 个 \$id · ${st.refs||0} 个 \$ref · 已下载 ${Ops.esc(d.filename||"")}` +
+      `<br><span class="hint">下发前须在 NINA 桌面端手动 Load 目检无 Unknown 节点(增强-6 安全闸门)。</span>`;
+  } else {
+    Ops.status("err", `自检未过:${(v.errors||[])[0]||""}`);
+    if(valEl) valEl.innerHTML =
+      `<span style="color:var(--err)">✗ 自检未过(${(v.errors||[]).length} 项):</span><br>` +
+      (v.errors||[]).slice(0,8).map(e=>`· ${Ops.esc(e)}`).join("<br>") +
+      `<br><button class="cap mini" id="btn-dl-anyway">仍下载查看</button>`;
+    const dl = document.getElementById("btn-dl-anyway");
+    if(dl) dl.onclick = ()=> downloadJSON(d.filename||"sequence.json", d.json);
+  }
+}
+function downloadJSON(filename, obj){
+  const blob = new Blob([JSON.stringify(obj, null, 1)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+
+/* ============================ 顶部工具栏交互 ============================ */
+function bindToolbar(){
+  document.querySelectorAll("[data-new]").forEach(b=> b.onclick = ()=>{
+    const c = defaultCard(b.dataset.new);
+    proj.cards.push(c); sel={type:"card", id:c.id};
+    save(); render(); bindLib();
+  });
+  document.getElementById("btn-addtrack").onclick = ()=>{
+    const n = proj.tracks.length;
+    proj.tracks.push({ id:uid("t_"), name:"轨 "+n, muted:false, order:n, clips:[] });
+    save(); render();
+  };
+  document.getElementById("btn-compile").onclick = compileProj;
+  document.getElementById("proj-date").onchange = async (e)=>{
+    proj.date = e.target.value; save();
+    await loadTwilight();
+    render();
+  };
+}
+
+/* ============================ 站点 / 暮光加载(MVP-2) ============================ */
+async function loadSite(){
+  try {
+    const d = await Ops.get("/api/designer/site");
+    site = d; proj.site = { lat:d.lat, lon:d.lon, elev:d.elev };
+  } catch(e){}
+}
+async function loadTwilight(){
+  const date = proj.date || "2026-06-18";
+  let d;
+  try { d = await Ops.get(`/api/designer/twilight?date=${encodeURIComponent(date)}`); }
+  catch(e){ twilight=null; return; }
+  const P = (s)=> s ? new Date(s) : null;
+  twilight = { sunset:P(d.sunset), dusk:P(d.dusk), dawn:P(d.dawn), sunrise:P(d.sunrise) };
+  // 横轴范围:日落 → 次日日出(回退:date 当天 18:00 → 次日 07:00)
+  const base = new Date(date+"T00:00:00");
+  const setT = twilight.sunset || new Date(base.getTime()+18*3600000);
+  const riseT = twilight.sunrise || new Date(base.getTime()+(24+7)*3600000);
+  originSec = Math.floor(setT.getTime()/1000);
+  endSec = Math.floor(riseT.getTime()/1000);
+  if(endSec<=originSec) endSec = originSec + 11*3600;   // 兜底 11h
+}
+
+/* ============================ 启动 ============================ */
+async function boot(){
+  proj = load() || defaultProject();
+  // 字段补全(旧 localStorage 兼容)
+  if(!proj.overhead) proj.overhead = defaultOverhead();
+  if(!proj.tracks || !proj.tracks.length) proj.tracks = [{id:"t0",name:"轨 0",muted:false,order:0,clips:[]}];
+  proj.tracks.forEach(t=> (t.clips||[]).forEach(cl=>{ if(!cl.overrides)cl.overrides={}; }));
+  document.getElementById("proj-date").value = proj.date || "2026-06-18";
+
+  await loadSite();
+  await loadTwilight();
+
+  // 重算所有 clip 时长(overhead/卡片可能已变)
+  proj.tracks.forEach(t=> (t.clips||[]).forEach(cl=>{ cl.duration_s = clipDuration(cl); }));
+
+  bindToolbar();
+  render();
+  bindLib();
+
+  // 点击空白处清选(便于退出编辑)
+  document.getElementById("tl-tracks").onclick = ()=>{ sel=null; render(); };
+
+  Ops.status("ok", `设计器就绪 · 站点 ${site.source} · ${proj.cards.length} 张卡片`);
+}
+
+// 窗口尺寸变化:重算横轴 + 重绘
+let __rz=null;
+window.addEventListener("resize", ()=>{ clearTimeout(__rz); __rz=setTimeout(()=>{ if(proj) render(); }, 120); });
+
+document.addEventListener("ops:ready", boot);
+</script>
+</body>
+</html>
